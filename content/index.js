@@ -1185,23 +1185,34 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
     ].join("\n");
   }
   var styles = `
-:host { all: initial; }
+:host {
+  all: initial;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2147483647;
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+  contain: none;
+}
 * { box-sizing: border-box; }
 button:focus-visible {
   outline: 2px solid rgba(143, 220, 196, 0.76);
   outline-offset: 2px;
 }
 .yor-root {
-  position: fixed;
+  position: absolute;
   right: 18px;
   bottom: 18px;
-  z-index: 2147483647;
-  width: 430px;
-  max-width: calc(100vw - 24px);
+  width: min(430px, calc(100vw - 24px));
+  min-width: min(320px, calc(100vw - 24px));
   color: #f4f1ea;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
   line-height: 1.35;
+  pointer-events: auto;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --dur-fast: 150ms;
@@ -1221,6 +1232,7 @@ button:focus-visible {
   line-height: 1.25;
   padding: 0;
   text-align: left;
+  pointer-events: auto;
   text-shadow: 0 1px 2px rgba(0,0,0,0.55);
   animation: yor-fade-in var(--dur-med) var(--ease-out) both;
   transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
@@ -1229,6 +1241,8 @@ button:focus-visible {
 .yor-page-meter strong { color: #2f9cf5; font-weight: 760; }
 .yor-page-meter span + span { margin-left: 8px; }
 .yor-card {
+  width: 100%;
+  min-width: 0;
   border-radius: 8px;
   overflow: hidden;
   background: rgba(15, 15, 17, 0.97);
@@ -1327,7 +1341,7 @@ button:focus-visible {
   .yor-root { display: none !important; }
 }
 @media (min-width: 320px) and (max-width: 768px) {
-  .yor-root { right: 10px; left: 10px; width: auto; bottom: 10px; }
+  .yor-root { right: 10px; left: 10px; width: auto; min-width: 0; bottom: 10px; }
   .yor-page-meter { top: 70px; left: 14px; right: 14px; max-width: none; font-size: 12px; }
   .yor-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .yor-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1357,6 +1371,16 @@ button:focus-visible {
       this.callbacks = callbacks;
       this.container = document.createElement("div");
       this.container.className = "yor-token-usage-root";
+      Object.assign(this.container.style, {
+        position: "fixed",
+        inset: "0",
+        width: "100vw",
+        height: "100vh",
+        zIndex: "2147483647",
+        overflow: "visible",
+        pointerEvents: "none",
+        contain: "none"
+      });
       this.container.style.display = "none";
       this.shadow = this.container.attachShadow({ mode: "open" });
       const style = document.createElement("style");
