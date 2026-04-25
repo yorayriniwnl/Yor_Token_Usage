@@ -274,9 +274,8 @@ function detectTokenAnomalies(events, preferences) {
   }
   return anomalies.slice(-25).reverse();
 }
-function buildAnalytics(events, preferences) {
+function buildAnalytics(events, preferences, now = Date.now()) {
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
-  const now = Date.now();
   const fourteenDaysAgo = startOfLocalDay(now - 13 * 864e5);
   const eightWeeksAgo = startOfLocalWeek(now - 7 * 7 * 864e5);
   const dayMap = /* @__PURE__ */ new Map();
@@ -317,6 +316,54 @@ function buildAnalytics(events, preferences) {
     anomalies,
     timeline: sorted.slice(-60).reverse()
   };
+}
+var snapshotAnalyticsCache;
+function analyticsEventKey(event) {
+  if (!event) return "";
+  return [
+    usageEventIdentity(event),
+    event.timestamp,
+    event.promptTokens,
+    event.outputTokens,
+    event.totalTokens,
+    event.status ?? "",
+    event.resetAt ?? ""
+  ].join(":");
+}
+function analyticsPreferencesKey(preferences) {
+  const alertKey = [
+    preferences.alerts.largePromptTokens,
+    preferences.alerts.anomalyMultiplier
+  ].join(":");
+  const siteCostKey = Object.keys(DEFAULT_PREFERENCES.sites).sort().map((site) => {
+    const settings = preferences.sites?.[site] ?? {};
+    const inputCost = Number.isFinite(settings.costInputPer1k) ? settings.costInputPer1k : "";
+    const outputCost = Number.isFinite(settings.costOutputPer1k) ? settings.costOutputPer1k : "";
+    return `${site}:${inputCost}:${outputCost}`;
+  }).join("|");
+  return `${alertKey}|${siteCostKey}`;
+}
+function analyticsCacheKey(state, now) {
+  const events = state.usageEvents;
+  return [
+    toDateKey(now),
+    events.length,
+    analyticsEventKey(events[0]),
+    analyticsEventKey(events[events.length - 1]),
+    analyticsPreferencesKey(state.preferences)
+  ].join("||");
+}
+function getSnapshotAnalytics(state, now) {
+  const key = analyticsCacheKey(state, now);
+  if (snapshotAnalyticsCache?.key === key) {
+    return snapshotAnalyticsCache.analytics;
+  }
+  const analytics = buildAnalytics(state.usageEvents, state.preferences, now);
+  snapshotAnalyticsCache = { key, analytics };
+  return analytics;
+}
+function invalidateSnapshotAnalytics() {
+  snapshotAnalyticsCache = void 0;
 }
 
 // src/storage/store.ts
@@ -751,7 +798,8 @@ function sessionMatchesUrl(session, activeUrl) {
   }
 }
 function buildSnapshot(state, activeUrl) {
-  const analytics = buildAnalytics(state.usageEvents, state.preferences);
+  const generatedAt = Date.now();
+  const analytics = getSnapshotAnalytics(state, generatedAt);
   const sessions = Object.values(state.sessions).filter((session) => session && isTrackingEnabled(state.preferences, session.site)).sort((a, b) => b.lastUpdated - a.lastUpdated);
   const currentSession = (() => {
     if (!activeUrl) return sessions[0];
@@ -773,13 +821,14 @@ function buildSnapshot(state, activeUrl) {
     currentSession,
     sessions,
     recentThreads: Object.values(state.threads).sort((a, b) => b.lastUpdated - a.lastUpdated).slice(0, 10),
-    generatedAt: Date.now()
+    generatedAt
   };
 }
 async function exportState() {
   return getState();
 }
 async function importState(state) {
+  invalidateSnapshotAnalytics();
   return saveState(hydrateState(state));
 }
 
