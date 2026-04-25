@@ -1,0 +1,289 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  FREE
+  PRO
+  TEAM
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum DeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum UsageEventStatus {
+  COMPLETED
+  RATE_LIMITED
+  FAILED
+}
+
+enum Accuracy {
+  ESTIMATED
+  EXACT
+  INFERRED
+}
+
+enum QuotaWindowStatus {
+  OPEN
+  CLOSED
+  LOCKED
+}
+
+enum ApiLogStatus {
+  OK
+  ERROR
+  RATE_LIMITED
+}
+
+model User {
+  id          String   @id @default(uuid()) @db.Uuid
+  authSubject String   @unique @map("auth_subject")
+  email       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  lastSeenAt  DateTime? @map("last_seen_at")
+
+  devices       ExtensionInstall[]
+  settings      UserSettings?
+  usageEvents   UsageEvent[]
+  quotaWindows  QuotaWindow[]
+  subscriptions Subscription[]
+  secrets       UserSecret[]
+  apiLogs       ApiRequestLog[]
+  errorLogs     ErrorLog[]
+  auditLogs     AuditLog[]
+  idempotency   IdempotencyKey[]
+
+  @@map("users")
+}
+
+model ExtensionInstall {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  installId      String       @map("install_id")
+  extensionId    String       @map("extension_id")
+  extensionVer   String?      @map("extension_ver")
+  browser        String?
+  platform       String?
+  deviceName     String?      @map("device_name")
+  fingerprintHash String?     @map("fingerprint_hash")
+  status         DeviceStatus @default(ACTIVE)
+  firstSeenAt    DateTime     @default(now()) @map("first_seen_at")
+  lastSeenAt     DateTime     @default(now()) @map("last_seen_at")
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageEvents UsageEvent[]
+  apiLogs     ApiRequestLog[]
+  errorLogs   ErrorLog[]
+  auditLogs   AuditLog[]
+
+  @@unique([userId, installId])
+  @@index([userId, status, lastSeenAt])
+  @@map("extension_installs")
+}
+
+model UserSettings {
+  userId    String   @id @map("user_id") @db.Uuid
+  version   Int      @default(1)
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model UsageEvent {
+  id            String           @id @default(uuid()) @db.Uuid
+  userId        String           @map("user_id") @db.Uuid
+  deviceId      String?          @map("device_id") @db.Uuid
+  clientEventId String           @map("client_event_id")
+  provider      String
+  model         String
+  threadId      String?          @map("thread_id")
+  occurredAt    DateTime         @map("occurred_at")
+  promptTokens  Int              @map("prompt_tokens")
+  outputTokens  Int              @map("output_tokens")
+  totalTokens   Int              @map("total_tokens")
+  promptHash    String?          @map("prompt_hash")
+  status        UsageEventStatus @default(COMPLETED)
+  accuracy      Accuracy         @default(ESTIMATED)
+  metadata      Json?
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device ExtensionInstall? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, clientEventId])
+  @@index([userId, occurredAt])
+  @@index([deviceId, occurredAt])
+  @@index([userId, provider, model, occurredAt])
+  @@map("usage_events")
+}
+
+model QuotaWindow {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String            @map("user_id") @db.Uuid
+  provider    String
+  model       String
+  windowStart DateTime          @map("window_start")
+  windowEnd   DateTime          @map("window_end")
+  usedTokens  Int               @default(0) @map("used_tokens")
+  promptCount Int               @default(0) @map("prompt_count")
+  status      QuotaWindowStatus @default(OPEN)
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, model, windowStart])
+  @@index([userId, windowStart, windowEnd])
+  @@map("quota_windows")
+}
+
+model Plan {
+  id              String   @id
+  tier            PlanTier
+  name            String
+  monthlyTokenCap Int      @map("monthly_token_cap")
+  maxDevices      Int      @map("max_devices")
+  maxEventsPerDay Int      @map("max_events_per_day")
+  features        Json
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  userId             String             @map("user_id") @db.Uuid
+  planId             String             @map("plan_id")
+  provider           String             @default("stripe")
+  providerCustomerId String?            @map("provider_customer_id")
+  providerSubId      String?            @map("provider_sub_id")
+  status             SubscriptionStatus
+  currentPeriodStart DateTime?          @map("current_period_start")
+  currentPeriodEnd   DateTime?          @map("current_period_end")
+  cancelAtPeriodEnd  Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@index([userId, status])
+  @@index([providerCustomerId])
+  @@map("subscriptions")
+}
+
+model UserSecret {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  name        String
+  ciphertext  Bytes
+  keyId       String   @map("key_id")
+  nonce       Bytes?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@map("user_secrets")
+}
+
+model ApiRequestLog {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String?      @map("user_id") @db.Uuid
+  deviceId    String?      @map("device_id") @db.Uuid
+  requestId   String       @map("request_id")
+  method      String
+  route       String
+  statusCode  Int          @map("status_code")
+  status      ApiLogStatus
+  latencyMs   Int          @map("latency_ms")
+  ipHash      String?      @map("ip_hash")
+  userAgentHash String?    @map("user_agent_hash")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device ExtensionInstall? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([route, createdAt])
+  @@map("api_request_logs")
+}
+
+model ErrorLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  deviceId  String?  @map("device_id") @db.Uuid
+  source    String
+  severity  String
+  message   String
+  stackHash String?  @map("stack_hash")
+  context   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device ExtensionInstall? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([source, severity, createdAt])
+  @@map("error_logs")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  deviceId  String?  @map("device_id") @db.Uuid
+  action    String
+  actor     String
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device ExtensionInstall? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model IdempotencyKey {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  route       String
+  key         String
+  requestHash String   @map("request_hash")
+  response    Json?
+  statusCode  Int?     @map("status_code")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, route, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

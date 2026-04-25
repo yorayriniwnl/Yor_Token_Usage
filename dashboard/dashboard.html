@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yor Token Usage Dashboard</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Multi-platform analytics</p>
+          <h1>Yor Token Usage Dashboard</h1>
+          <p class="hero-copy">See tokens, model mix, burn rate, quota risk, and prompt compression opportunities across your AI workflow.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="export-json-btn" class="ghost-btn">Export JSON</button>
+          <button id="export-csv-btn" class="ghost-btn">Export CSV</button>
+          <button id="settings-btn" class="primary-btn">Settings</button>
+        </div>
+      </header>
+
+      <section id="metrics" class="metric-grid"></section>
+
+      <section class="grid two-up">
+        <article class="panel wide">
+          <div class="section-head"><h2>Daily usage</h2><span>14-day trend</span></div>
+          <div id="daily-chart" class="chart-box"></div>
+        </article>
+        <article class="panel">
+          <div class="section-head"><h2>What changed since last session</h2></div>
+          <div id="change-card" class="copy-stack"></div>
+        </article>
+      </section>
+
+      <section class="grid two-up">
+        <article class="panel">
+          <div class="section-head"><h2>Weekly burn</h2></div>
+          <div id="weekly-chart" class="stack-list"></div>
+        </article>
+        <article class="panel">
+          <div class="section-head"><h2>By site</h2></div>
+          <div id="site-breakdown" class="stack-list"></div>
+        </article>
+      </section>
+
+      <section class="grid two-up">
+        <article class="panel">
+          <div class="section-head"><h2>By model</h2></div>
+          <div id="model-breakdown" class="stack-list"></div>
+        </article>
+        <article class="panel">
+          <div class="section-head"><h2>Recent threads</h2></div>
+          <div id="recent-threads" class="copy-stack"></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><h2>Session timeline</h2></div>
+        <div id="timeline" class="timeline"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><h2>Anomalies and spikes</h2></div>
+        <div id="anomalies" class="copy-stack"></div>
+      </section>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

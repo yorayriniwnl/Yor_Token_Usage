@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yor Token Usage Settings</title>
+    <link rel="stylesheet" href="./settings.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Privacy-first controls</p>
+          <h1>Yor Token Usage Settings</h1>
+          <p>Keep analytics local, tune reset rules, set alert thresholds, and override quota or cost assumptions when your plan differs.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="test-notification-btn" class="ghost-btn">Test notification</button>
+          <button id="save-btn" class="primary-btn">Save changes</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="section-head"><h2>Global preferences</h2></div>
+        <div class="form-grid">
+          <label class="field"><span>Theme</span><select id="theme"></select></label>
+          <label class="field"><span>Privacy mode</span><select id="privacy-mode"></select></label>
+          <label class="field"><span>Badge mode</span><select id="badge-mode"></select></label>
+          <label class="field inline"><input id="show-overlay" type="checkbox" /> <span>Show floating overlay on supported sites</span></label>
+          <label class="field inline"><input id="compact-mode" type="checkbox" /> <span>Compact interface mode</span></label>
+          <label class="field inline"><input id="desktop-notifications" type="checkbox" /> <span>Desktop notifications</span></label>
+          <label class="field"><span>Quota warning %</span><input id="quota-warning-percent" type="number" min="1" max="100" /></label>
+          <label class="field"><span>Large prompt threshold</span><input id="large-prompt-tokens" type="number" min="100" step="50" /></label>
+          <label class="field"><span>Anomaly multiplier</span><input id="anomaly-multiplier" type="number" min="1" step="0.1" /></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><h2>Per-site quota assumptions</h2></div>
+        <div id="site-settings" class="site-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><h2>Import / export</h2></div>
+        <div class="hero-actions import-actions">
+          <button id="export-btn" class="ghost-btn">Export data</button>
+          <label class="ghost-btn file-btn">Import JSON<input id="import-input" type="file" accept="application/json" hidden /></label>
+          <button id="restore-defaults-btn" class="ghost-btn">Restore defaults</button>
+        </div>
+        <p id="save-state" class="save-state"></p>
+      </section>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>
