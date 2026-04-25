@@ -26,31 +26,77 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  app.put("/v1/settings", { preHandler: [requireAuth, userLimiter] }, async (request) => {
+  app.put("/v1/settings", { preHandler: [requireAuth, userLimiter] }, async (request, reply) => {
     const body = settingsUpdateSchema.parse(request.body);
     const payload = body.payload as Prisma.InputJsonObject;
-    const settings = await app.prisma.userSettings.upsert({
-      where: { userId: request.auth!.userId },
-      create: {
-        userId: request.auth!.userId,
-        version: body.version,
-        payload
-      },
-      update: {
-        version: body.version,
-        payload
+    const userId = request.auth!.userId;
+
+    const result = await app.prisma.$transaction(async (tx) => {
+      const conflict = async () => ({
+        conflict: true as const,
+        current: await tx.userSettings.findUnique({ where: { userId } })
+      });
+
+      const writeAuditLog = async (version: number, previousVersion: number | null) => {
+        await tx.auditLog.create({
+          data: {
+            userId,
+            action: "settings.updated",
+            actor: "user",
+            metadata: { version, previousVersion }
+          }
+        });
+      };
+
+      if (body.version === 1) {
+        try {
+          const settings = await tx.userSettings.create({
+            data: {
+              userId,
+              version: body.version,
+              payload
+            }
+          });
+          await writeAuditLog(body.version, null);
+          return { conflict: false as const, settings };
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return conflict();
+          }
+          throw error;
+        }
       }
+
+      const previousVersion = body.version - 1;
+      const update = await tx.userSettings.updateMany({
+        where: { userId, version: previousVersion },
+        data: { version: body.version, payload }
+      });
+
+      if (update.count !== 1) {
+        return conflict();
+      }
+
+      const settings = await tx.userSettings.findUniqueOrThrow({ where: { userId } });
+      await writeAuditLog(body.version, previousVersion);
+      return { conflict: false as const, settings };
     });
 
-    await app.prisma.auditLog.create({
-      data: {
-        userId: request.auth!.userId,
-        action: "settings.updated",
-        actor: "user",
-        metadata: { version: body.version }
-      }
-    });
+    if (result.conflict) {
+      reply.code(409);
+      return {
+        error: "settings_version_conflict",
+        message: "Settings were updated by another client. Fetch the latest settings and retry.",
+        expectedVersion: result.current ? result.current.version + 1 : 1,
+        currentSettings: result.current ? {
+          version: result.current.version,
+          payload: result.current.payload,
+          updatedAt: result.current.updatedAt
+        } : null
+      };
+    }
 
+    const settings = result.settings;
     return {
       settings: {
         version: settings.version,

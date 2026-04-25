@@ -182,7 +182,24 @@ Request:
 }
 ```
 
+`version` is the next settings version. The write succeeds only when the stored version is exactly `version - 1`; the first settings write must use version `1`.
+
 Response: same as GET.
+
+Conflict response:
+
+```json
+{
+  "error": "settings_version_conflict",
+  "message": "Settings were updated by another client. Fetch the latest settings and retry.",
+  "expectedVersion": 3,
+  "currentSettings": {
+    "version": 2,
+    "payload": { "version": 2, "preferences": {} },
+    "updatedAt": "2026-04-24T00:00:00.000Z"
+  }
+}
+```
 
 ### POST `/v1/usage/events/batch`
 
