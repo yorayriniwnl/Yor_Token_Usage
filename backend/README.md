@@ -293,10 +293,13 @@ Request:
 ```json
 {
   "since": "2026-04-24T00:00:00.000Z",
+  "cursor": "optional-next-cursor-from-previous-response",
   "includeUsage": true,
   "maxEvents": 100
 }
 ```
+
+`usageEvents` are returned in descending `(occurredAt, id)` order. When `usagePage.hasMore` is true, call again with the returned `usagePage.nextCursor` and the same `since` value to continue the page.
 
 Response:
 
@@ -304,7 +307,11 @@ Response:
 {
   "serverTime": "2026-04-24T00:00:00.000Z",
   "settings": null,
-  "usageEvents": []
+  "usageEvents": [],
+  "usagePage": {
+    "hasMore": false,
+    "nextCursor": null
+  }
 }
 ```
 
