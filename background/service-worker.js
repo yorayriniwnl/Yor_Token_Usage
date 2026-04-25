@@ -605,6 +605,16 @@ function invalidateSnapshotAnalytics() {
 // src/storage/store.ts
 var memoryStorage = /* @__PURE__ */ new Map();
 var stateQueue = Promise.resolve();
+function logStateOperationError(error) {
+  console.error("Yor Token Usage state operation failed", error);
+}
+function enqueueStateOperation(operation) {
+  const queuedOperation = stateQueue.then(operation);
+  stateQueue = queuedOperation.then(() => void 0, (error) => {
+    logStateOperationError(error);
+  });
+  return queuedOperation;
+}
 function localArea() {
   return chrome?.storage?.local;
 }
@@ -918,7 +928,8 @@ async function readStateFromStorage() {
     try {
       const result = await sync.get(PREFERENCES_SYNC_KEY);
       syncedPreferences = result[PREFERENCES_SYNC_KEY];
-    } catch {
+    } catch (error) {
+      console.warn("Yor Token Usage could not read synced preferences", error);
       syncedPreferences = void 0;
     }
   }
@@ -931,9 +942,7 @@ async function readStateFromStorage() {
   return state;
 }
 async function getState() {
-  const readOperation = stateQueue.catch(() => void 0).then(() => readStateFromStorage());
-  stateQueue = readOperation.then(() => void 0, () => void 0);
-  return readOperation;
+  return enqueueStateOperation(() => readStateFromStorage());
 }
 async function writeStateToStorage(state) {
   const hydrated = hydrateState(state);
@@ -941,26 +950,22 @@ async function writeStateToStorage(state) {
   const sync = syncArea();
   if (sync) {
     if (hydrated.preferences.privacyMode === "sync-preferences") {
-      await sync.set({ [PREFERENCES_SYNC_KEY]: hydrated.preferences }).catch(() => void 0);
+      await sync.set({ [PREFERENCES_SYNC_KEY]: hydrated.preferences });
     } else {
-      await sync.remove(PREFERENCES_SYNC_KEY).catch(() => void 0);
+      await sync.remove(PREFERENCES_SYNC_KEY);
     }
   }
   return hydrated;
 }
 async function saveState(state) {
-  const nextWrite = stateQueue.catch(() => void 0).then(() => writeStateToStorage(state));
-  stateQueue = nextWrite.catch(() => void 0);
-  return nextWrite;
+  return enqueueStateOperation(() => writeStateToStorage(state));
 }
 async function updateState(mutator) {
-  const nextWrite = stateQueue.catch(() => void 0).then(async () => {
+  return enqueueStateOperation(async () => {
     const current = await readStateFromStorage();
     const next = await mutator(structuredClone(current));
     return writeStateToStorage(next);
   });
-  stateQueue = nextWrite.catch(() => void 0);
-  return nextWrite;
 }
 async function savePreferences(preferences) {
   return updateState(async (state) => {
