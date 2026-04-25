@@ -368,7 +368,7 @@ function invalidateSnapshotAnalytics() {
 
 // src/storage/store.ts
 var memoryStorage = /* @__PURE__ */ new Map();
-var writeQueue = Promise.resolve();
+var stateQueue = Promise.resolve();
 function localArea() {
   return chrome?.storage?.local;
 }
@@ -643,7 +643,7 @@ function hydrateState(raw) {
     }
   };
 }
-async function getState() {
+async function readStateFromStorage() {
   const rawState = await storageGet(STATE_KEY);
   let state = hydrateState(rawState);
   let syncedPreferences;
@@ -664,7 +664,12 @@ async function getState() {
   }
   return state;
 }
-async function saveState(state) {
+async function getState() {
+  const readOperation = stateQueue.catch(() => void 0).then(() => readStateFromStorage());
+  stateQueue = readOperation.then(() => void 0, () => void 0);
+  return readOperation;
+}
+async function writeStateToStorage(state) {
   const hydrated = hydrateState(state);
   await storageSet({ [STATE_KEY]: hydrated });
   const sync = syncArea();
@@ -677,13 +682,18 @@ async function saveState(state) {
   }
   return hydrated;
 }
+async function saveState(state) {
+  const nextWrite = stateQueue.catch(() => void 0).then(() => writeStateToStorage(state));
+  stateQueue = nextWrite.catch(() => void 0);
+  return nextWrite;
+}
 async function updateState(mutator) {
-  const nextWrite = writeQueue.catch(() => void 0).then(async () => {
-    const current = await getState();
+  const nextWrite = stateQueue.catch(() => void 0).then(async () => {
+    const current = await readStateFromStorage();
     const next = await mutator(structuredClone(current));
-    return saveState(next);
+    return writeStateToStorage(next);
   });
-  writeQueue = nextWrite.catch(() => void 0);
+  stateQueue = nextWrite.catch(() => void 0);
   return nextWrite;
 }
 async function savePreferences(preferences) {
@@ -835,27 +845,29 @@ async function importState(state) {
 // src/background/service-worker.ts
 var ALARM_NAME = "yor-token-usage-refresh";
 async function ensureState() {
-  const rawState = await storageGet(STATE_KEY);
-  if (!rawState) {
-    return saveState({});
-  }
-  return getState();
+  return updateState(async (state) => state);
 }
 async function withNotificationBudget(key, ttlMs, task) {
-  const state = await getState();
-  const lastSent = state.meta.notificationTimestamps[key] ?? 0;
-  if (Date.now() - lastSent < ttlMs) return;
-  await task();
-  await updateState(async (state2) => ({
-    ...state2,
-    meta: {
-      ...state2.meta,
-      notificationTimestamps: {
-        ...state2.meta.notificationTimestamps,
-        [key]: Date.now()
+  let reserved = false;
+  await updateState(async (state) => {
+    const now = Date.now();
+    const lastSent = state.meta.notificationTimestamps[key] ?? 0;
+    if (now - lastSent < ttlMs) return state;
+    reserved = true;
+    return {
+      ...state,
+      meta: {
+        ...state.meta,
+        notificationTimestamps: {
+          ...state.meta.notificationTimestamps,
+          [key]: now
+        }
       }
-    }
-  }));
+    };
+  });
+  if (reserved) {
+    await task();
+  }
 }
 async function notify(title, message) {
   await chrome.notifications.create({
