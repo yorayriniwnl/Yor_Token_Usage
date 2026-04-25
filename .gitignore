@@ -1,0 +1,8 @@
+*.zip
+Thumbs.db
+.DS_Store
+node_modules/
+dist/
+.env
+backend/node_modules/
+backend/dist/

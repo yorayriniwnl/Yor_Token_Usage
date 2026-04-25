@@ -1,0 +1,73 @@
+{
+  "manifest_version": 3,
+  "name": "Yor Token Usage",
+  "description": "A premium AI usage cockpit for ChatGPT, Claude, Gemini, Perplexity, and Grok.",
+  "version": "1.0.0",
+  "minimum_chrome_version": "120",
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Yor Token Usage",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "options_page": "settings/settings.html",
+  "permissions": ["storage", "alarms", "notifications", "tabs"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://www.perplexity.ai/*",
+    "https://perplexity.ai/*",
+    "https://grok.com/*",
+    "https://x.com/i/grok*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://www.perplexity.ai/*",
+        "https://perplexity.ai/*",
+        "https://grok.com/*",
+        "https://x.com/i/grok*"
+      ],
+      "js": ["content/index.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "toggle-overlay": {
+      "suggested_key": {
+        "default": "Alt+Shift+Y"
+      },
+      "description": "Toggle the Yor Token Usage overlay"
+    },
+    "open-dashboard": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Open the Yor Token Usage dashboard"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

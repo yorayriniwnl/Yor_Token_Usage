@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yor Token Usage</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="brand-row">
+        <div>
+          <p class="eyebrow">AI usage cockpit</p>
+          <h1>Yor Token Usage</h1>
+        </div>
+        <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">&#9881;</button>
+      </header>
+
+      <section id="usage-card" class="panel hero-panel"></section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>Last 14 days</h2>
+          <button id="refresh-btn" class="ghost-btn">Refresh</button>
+        </div>
+        <div id="trend-chart" class="chart-box"></div>
+      </section>
+
+      <section class="panel split-panel">
+        <div>
+          <div class="section-head compact">
+            <h2>Top models</h2>
+          </div>
+          <div id="model-breakdown" class="stack-list"></div>
+        </div>
+        <div>
+          <div class="section-head compact">
+            <h2>Reduce tokens</h2>
+          </div>
+          <div id="suggestions" class="suggestion-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head compact">
+          <h2>What changed</h2>
+        </div>
+        <p id="change-summary" class="summary-copy"></p>
+      </section>
+
+      <footer class="action-row">
+        <button id="copy-summary-btn" class="ghost-btn">Copy summary</button>
+        <button id="copy-shorter-btn" class="ghost-btn">Copy shorter</button>
+        <button id="toggle-overlay-btn" class="ghost-btn">Overlay</button>
+        <button id="dashboard-btn" class="primary-btn">Dashboard</button>
+      </footer>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>
