@@ -160,7 +160,7 @@ function renderSiteCard(site, preferences) {
         </select>
       </label>
       <label class="field"><span>Interval minutes</span><input data-key="intervalMinutes" type="number" min="1" value="${inputValue(resetRule.intervalMinutes)}" /></label>
-      <label class="field"><span>Anchor time</span><input data-key="anchorLocalTime" type="time" value="${inputValue(resetRule.anchorLocalTime ?? "00:00")}" /></label>
+      <label class="field"><span>Anchor time (UTC)</span><input data-key="anchorLocalTime" type="time" value="${inputValue(resetRule.anchorLocalTime ?? "00:00")}" /></label>
       <label class="field"><span>Day of week (0-6)</span><input data-key="dayOfWeek" type="number" min="0" max="6" value="${inputValue(resetRule.dayOfWeek ?? 1)}" /></label>
       <label class="field"><span>Window token budget</span><input data-key="tokenBudget" type="number" min="0" step="100" value="${inputValue(settings.tokenBudget)}" /></label>
       <label class="field"><span>Context window</span><input data-key="contextWindow" type="number" min="0" step="1000" value="${inputValue(settings.contextWindow)}" /></label>

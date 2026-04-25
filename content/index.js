@@ -882,8 +882,14 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
       minutes: Number.isFinite(minutes) ? minutes : 0
     };
   }
+  function getUtcDailyWindowBounds(rule, now) {
+    const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
+    const current = new Date(now);
+    const anchor = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
+    const start = anchor > now ? anchor - 864e5 : anchor;
+    return { start, end: start + 864e5 };
+  }
   function getCurrentWindowBounds(rule, now = Date.now()) {
-    const date = new Date(now);
     switch (rule.kind) {
       case "rolling": {
         const intervalMs = (rule.intervalMinutes ?? 180) * 6e4;
@@ -899,15 +905,7 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
         return { start, end: start + intervalMinutes * 6e4 };
       }
       case "daily": {
-        const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
-        const start = new Date(now);
-        start.setHours(hours, minutes, 0, 0);
-        if (start.getTime() > now) {
-          start.setDate(start.getDate() - 1);
-        }
-        const end = new Date(start);
-        end.setDate(end.getDate() + 1);
-        return { start: start.getTime(), end: end.getTime() };
+        return getUtcDailyWindowBounds(rule, now);
       }
       case "weekly": {
         const targetDay = rule.dayOfWeek ?? 1;
