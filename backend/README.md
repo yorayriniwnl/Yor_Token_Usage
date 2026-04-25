@@ -335,7 +335,7 @@ Response:
 
 - Usage ingestion is async through Redis Streams.
 - Usage events are deduped by `(userId, clientEventId)`.
-- Batch requests support `Idempotency-Key`.
+- Batch requests support `Idempotency-Key`; expired idempotency rows are swept by a Redis-locked cleanup job.
 - Worker retries 5 times with exponential backoff.
 - API uses bounded body sizes and request validation.
 - Extension should buffer usage events locally and retry with exponential backoff.

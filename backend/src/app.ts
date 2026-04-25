@@ -3,6 +3,7 @@ import helmet from "@fastify/helmet";
 import sensible from "@fastify/sensible";
 import Fastify from "fastify";
 import { env, allowedExtensionOrigins } from "./config/env.js";
+import { startIdempotencyCleanup } from "./jobs/idempotencyCleanup.js";
 import { createUsageQueue } from "./jobs/usageQueue.js";
 import { prisma } from "./lib/prisma.js";
 import { redis } from "./lib/redis.js";
@@ -34,6 +35,7 @@ export async function buildApp() {
   app.decorate("prisma", prisma);
   app.decorate("redis", redis);
   app.decorate("usageQueue", createUsageQueue(redis));
+  const idempotencyCleanup = startIdempotencyCleanup(prisma, redis, app.log);
 
   await app.register(helmet, {
     global: true,
@@ -86,6 +88,7 @@ export async function buildApp() {
   await app.register(diagnosticsRoutes);
 
   app.addHook("onClose", async () => {
+    idempotencyCleanup.stop();
     await app.usageQueue.close();
     await redis.quit();
     await prisma.$disconnect();

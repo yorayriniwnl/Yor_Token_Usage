@@ -19,6 +19,8 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
     const idempotencyKey = request.headers["idempotency-key"];
     const idempotency = typeof idempotencyKey === "string" ? idempotencyKey.slice(0, 160) : undefined;
     const requestHash = sha256(body);
+    const now = new Date();
+    const idempotencyExpiresAt = new Date(now.getTime() + 24 * 60 * 60_000);
 
     if (idempotency) {
       const existing = await app.prisma.idempotencyKey.findUnique({
@@ -30,11 +32,18 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
           }
         }
       });
-      if (existing?.response && existing.requestHash === requestHash) {
+
+      if (existing && existing.expiresAt <= now) {
+        await app.prisma.idempotencyKey.deleteMany({
+          where: {
+            id: existing.id,
+            expiresAt: { lte: now }
+          }
+        });
+      } else if (existing?.response && existing.requestHash === requestHash) {
         reply.code(existing.statusCode ?? 202);
         return existing.response;
-      }
-      if (existing && existing.requestHash !== requestHash) {
+      } else if (existing && existing.requestHash !== requestHash) {
         reply.code(409);
         return { error: "idempotency_conflict", message: "Idempotency key was reused with a different body" };
       }
@@ -86,13 +95,13 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
           requestHash,
           response,
           statusCode: 202,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60_000)
+          expiresAt: idempotencyExpiresAt
         },
         update: {
           requestHash,
           response,
           statusCode: 202,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60_000)
+          expiresAt: idempotencyExpiresAt
         }
       });
     }
