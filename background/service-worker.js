@@ -424,6 +424,12 @@ function startOfLocalDay(timestamp) {
   date.setHours(0, 0, 0, 0);
   return date.getTime();
 }
+function previousLocalDayStart(timestamp) {
+  const date = new Date(timestamp);
+  date.setDate(date.getDate() - 1);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
 function startOfLocalWeek(timestamp) {
   const date = new Date(timestamp);
   const day = date.getDay();
@@ -473,14 +479,15 @@ function aggregateBy(events, keyFn, preferences, labelFn) {
     };
   }).sort((a, b) => b.tokens - a.tokens);
 }
-function calculateStreak(events) {
+function calculateStreak(events, now = Date.now()) {
   if (!events.length) return 0;
   const usedDays = new Set(events.map((event) => startOfLocalDay(event.timestamp)));
   let streak = 0;
-  let cursor = startOfLocalDay(Date.now());
+  const today = startOfLocalDay(now);
+  let cursor = usedDays.has(today) ? today : previousLocalDayStart(today);
   while (usedDays.has(cursor)) {
     streak += 1;
-    cursor -= 864e5;
+    cursor = previousLocalDayStart(cursor);
   }
   return streak;
 }
@@ -541,7 +548,7 @@ function buildAnalytics(events, preferences, now = Date.now()) {
     burnRate,
     averagePromptTokens,
     peakDay,
-    streakDays: calculateStreak(sorted),
+    streakDays: calculateStreak(sorted, now),
     anomalies,
     timeline: sorted.slice(-60).reverse()
   };
