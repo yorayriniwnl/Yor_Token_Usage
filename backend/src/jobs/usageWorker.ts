@@ -3,6 +3,7 @@ import { createRedisClient } from "../lib/redis.js";
 import { usageBatchJobSchema } from "../schemas/usage.js";
 import { processUsageBatch } from "../services/usageIngestion.js";
 import type { UsageBatchJob } from "./usageQueue.js";
+import { shouldDeadLetterDelivery, shouldPauseFreshReads } from "./usageWorkerPolicy.js";
 
 const STREAM = "usage-events";
 const GROUP = "usage-workers";
@@ -86,7 +87,7 @@ async function handleMessage(id: string, fields: string[], deliveryCount?: numbe
     return;
   }
 
-  if (deliveryCount !== undefined && deliveryCount > MAX_ATTEMPTS) {
+  if (shouldDeadLetterDelivery(deliveryCount, MAX_ATTEMPTS)) {
     await deadLetter(id, payload, `message exceeded ${MAX_ATTEMPTS} Redis deliveries without acknowledgement`);
     return;
   }
@@ -131,7 +132,7 @@ async function loop(): Promise<void> {
   for (;;) {
     await reclaimStalePending(consumer);
     const pendingCount = await getGroupPendingCount();
-    if (pendingCount >= MAX_GROUP_PENDING_MESSAGES) {
+    if (shouldPauseFreshReads(pendingCount, MAX_GROUP_PENDING_MESSAGES)) {
       console.warn({ pendingCount }, "usage worker pausing fresh reads while pending messages drain");
       await sleep(BLOCK_MS);
       continue;

@@ -3,7 +3,7 @@ import { usageBatchJobSchema, type UsageBatchJobInput } from "../schemas/usage.j
 
 export type { UsageBatchJob, UsageBatchJobInput } from "../schemas/usage.js";
 
-interface UsageQueueOptions {
+export interface UsageQueueOptions {
   ownsRedisConnection: boolean;
 }
 

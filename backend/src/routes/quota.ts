@@ -4,43 +4,12 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { modelSchema, providerSchema } from "../schemas/common.js";
-
-type SubscriptionPeriod = {
-  currentPeriodStart: Date | null;
-  currentPeriodEnd: Date | null;
-} | null;
+import { resolveQuotaPeriod } from "../services/quotaPolicy.js";
 
 const quotaQuerySchema = z.object({
   provider: providerSchema.optional(),
   model: modelSchema.optional()
 });
-
-function startOfUtcMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-}
-
-function addUtcMonths(date: Date, months: number): Date {
-  const day = date.getUTCDate();
-  const next = new Date(date);
-  next.setUTCDate(1);
-  next.setUTCMonth(next.getUTCMonth() + months);
-
-  const daysInTargetMonth = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
-  next.setUTCDate(Math.min(day, daysInTargetMonth));
-  return next;
-}
-
-function resolveQuotaPeriod(subscription: SubscriptionPeriod, now: Date): { start: Date; end: Date; source: "subscription" | "calendar_month" } {
-  const currentPeriodStart = subscription?.currentPeriodStart;
-  const currentPeriodEnd = subscription?.currentPeriodEnd;
-
-  if (currentPeriodStart && currentPeriodEnd && currentPeriodStart <= now && currentPeriodEnd > now) {
-    return { start: currentPeriodStart, end: currentPeriodEnd, source: "subscription" };
-  }
-
-  const start = startOfUtcMonth(now);
-  return { start, end: addUtcMonths(start, 1), source: "calendar_month" };
-}
 
 export async function quotaRoutes(app: FastifyInstance): Promise<void> {
   app.get(

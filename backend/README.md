@@ -414,6 +414,7 @@ backend/
 - Set `ALLOWED_EXTENSION_ORIGINS` to the production extension ID only.
 - Set all secrets in cloud secret manager, not `.env` files.
 - Run `npm ci`.
+- Run `npm run verify`.
 - Run `npm run prisma:generate`.
 - Run `npm run prisma:migrate`.
 - Deploy API service with at least 2 instances.
