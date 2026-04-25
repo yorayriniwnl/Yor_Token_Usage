@@ -1323,7 +1323,10 @@ button:focus-visible {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-@media (max-width: 768px) {
+@media (max-width: 319px) {
+  .yor-root { display: none !important; }
+}
+@media (min-width: 320px) and (max-width: 768px) {
   .yor-root { right: 10px; left: 10px; width: auto; bottom: 10px; }
   .yor-page-meter { top: 70px; left: 14px; right: 14px; max-width: none; font-size: 12px; }
   .yor-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
