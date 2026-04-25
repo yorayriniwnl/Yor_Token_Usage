@@ -1559,7 +1559,42 @@ button:focus-visible {
         renderOverlayState(session, conversation, messages, response.snapshot);
       }
     };
-    const debouncedSync = debounce(syncSession, 180);
+    let syncInFlight = false;
+    let syncQueued = false;
+    let syncTimer = 0;
+    let lastSyncAt = 0;
+    const MIN_SYNC_INTERVAL_MS = 1500;
+    const MUTATION_SYNC_DELAY_MS = 1200;
+    const runScheduledSync = async () => {
+      if (syncInFlight) {
+        syncQueued = true;
+        return;
+      }
+      const now = Date.now();
+      const elapsed = now - lastSyncAt;
+      if (lastSyncAt > 0 && elapsed < MIN_SYNC_INTERVAL_MS) {
+        scheduleSync(MIN_SYNC_INTERVAL_MS - elapsed);
+        return;
+      }
+      syncInFlight = true;
+      try {
+        await syncSession();
+        lastSyncAt = Date.now();
+      } finally {
+        syncInFlight = false;
+        if (syncQueued) {
+          syncQueued = false;
+          scheduleSync(MUTATION_SYNC_DELAY_MS);
+        }
+      }
+    };
+    const scheduleSync = (delay = MUTATION_SYNC_DELAY_MS) => {
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        void runScheduledSync();
+      }, delay);
+    };
+    const debouncedSync = () => scheduleSync(MUTATION_SYNC_DELAY_MS);
     const registerPendingPrompt = () => {
       if (preferences.sites[adapter.site]?.enabled === false) return;
       const prompt = adapter.readComposerText();
@@ -1709,15 +1744,15 @@ button:focus-visible {
         sendResponse({ ok: true, visible: overlayEnabled });
       }
       if (message?.type === "refresh-session") {
-        void syncSession();
+        void runScheduledSync();
         sendResponse({ ok: true });
       }
       return true;
     });
     setInterval(() => {
       bindLiveControls();
-      void syncSession();
-    }, 5e3);
-    await syncSession();
+      scheduleSync(0);
+    }, 15e3);
+    await runScheduledSync();
   }
 })();
