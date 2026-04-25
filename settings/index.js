@@ -261,7 +261,10 @@ async function render() {
   document.querySelector("#test-notification-btn").onclick = async (event) => {
     try {
       await runButtonAction(event.currentTarget, async () => {
-        await sendRuntimeMessage({ type: "notify", title: "Yor Token Usage", message: "Notifications are enabled and working." });
+        const response = await sendRuntimeMessage({ type: "notify", title: "Yor Token Usage", message: "Notifications are enabled and working." });
+        if (!response?.ok) {
+          throw new Error(response?.error ?? "Notification permission is not available.");
+        }
       }, "Sent");
       setStatus("Test notification sent.");
     } catch (error) {

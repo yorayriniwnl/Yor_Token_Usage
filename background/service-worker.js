@@ -1144,13 +1144,25 @@ async function withNotificationBudget(key, ttlMs, task) {
     await task();
   }
 }
+async function hasNotificationPermission() {
+  if (!chrome.notifications?.create) return false;
+  if (!chrome.permissions?.contains) return true;
+  return chrome.permissions.contains({ permissions: ["notifications"] }).catch(() => false);
+}
 async function notify(title, message) {
-  await chrome.notifications.create({
+  if (!await hasNotificationPermission()) {
+    return {
+      ok: false,
+      error: "Notification permission is not available. Re-enable notifications for the extension in your browser settings."
+    };
+  }
+  const id = await chrome.notifications.create({
     type: "basic",
     iconUrl: "assets/icons/icon-128.png",
     title,
     message
   });
+  return { ok: true, id };
 }
 async function updateBadge(session) {
   const state = await getState();
@@ -1284,8 +1296,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
         }
         case "notify": {
-          await notify(message.title, message.message);
-          sendResponse({ ok: true });
+          sendResponse(await notify(message.title, message.message));
           break;
         }
         default:
