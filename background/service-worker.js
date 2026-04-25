@@ -708,6 +708,19 @@ function normalizeNotificationTimestamps(raw) {
   if (!raw || typeof raw !== "object") return {};
   return Object.fromEntries(Object.entries(raw).filter(([, timestamp]) => Number.isFinite(timestamp)));
 }
+function buildUsageEventKeyMap(events) {
+  const keys = {};
+  for (const event of events) {
+    keys[usageEventIdentity(event)] = true;
+  }
+  return keys;
+}
+function normalizeUsageEventKeys(raw, usageEvents) {
+  return isPlainObject(raw) ? raw : buildUsageEventKeyMap(usageEvents);
+}
+function hasUsageEventKey(keys, key) {
+  return Object.prototype.hasOwnProperty.call(keys, key);
+}
 function normalizeSession(session) {
   if (!isPlainObject(session)) return void 0;
   const site = normalizeSite(session.site);
@@ -808,14 +821,30 @@ function normalizeUsageEvents(rawEvents) {
   }).sort((a, b) => a.timestamp - b.timestamp).slice(-HISTORY_LIMIT);
 }
 function appendUsageEvent(events, event) {
-  const nextEvents = [...events];
-  if (!nextEvents.length || event.timestamp >= nextEvents[nextEvents.length - 1].timestamp) {
-    nextEvents.push(event);
-  } else {
-    const insertAt = nextEvents.findIndex((existingEvent) => existingEvent.timestamp > event.timestamp);
-    nextEvents.splice(insertAt === -1 ? nextEvents.length : insertAt, 0, event);
+  if (events.length >= HISTORY_LIMIT && event.timestamp <= events[0].timestamp) {
+    return { events, evictedEvents: [], retained: false };
   }
-  return nextEvents.slice(-HISTORY_LIMIT);
+  const evictedEvents = [];
+  if (!events.length || event.timestamp >= events[events.length - 1].timestamp) {
+    events.push(event);
+  } else {
+    let low = 0;
+    let high = events.length;
+    while (low < high) {
+      const midpoint = Math.floor((low + high) / 2);
+      if (events[midpoint].timestamp <= event.timestamp) {
+        low = midpoint + 1;
+      } else {
+        high = midpoint;
+      }
+    }
+    events.splice(low, 0, event);
+  }
+  while (events.length > HISTORY_LIMIT) {
+    const evicted = events.shift();
+    if (evicted) evictedEvents.push(evicted);
+  }
+  return { events, evictedEvents, retained: true };
 }
 function isTrackingEnabled(preferences, site) {
   return isKnownSite(site) && preferences.sites?.[site]?.enabled === true;
@@ -868,7 +897,8 @@ function hydrateState(raw) {
     usageEvents,
     threads: hasStoredThreads(raw?.threads) ? raw.threads : rebuildThreads(usageEvents, {}),
     meta: {
-      notificationTimestamps: normalizeNotificationTimestamps(raw?.meta?.notificationTimestamps)
+      notificationTimestamps: normalizeNotificationTimestamps(raw?.meta?.notificationTimestamps),
+      usageEventKeys: normalizeUsageEventKeys(raw?.meta?.usageEventKeys, usageEvents)
     }
   };
 }
@@ -1011,19 +1041,28 @@ async function recordUsageEvent(event) {
       return state2;
     }
     const eventKey = usageEventIdentity(normalizedEvent);
-    if (state2.usageEvents.some((existingEvent) => usageEventIdentity(existingEvent) === eventKey)) {
+    const usageEventKeys = state2.meta.usageEventKeys ?? {};
+    if (hasUsageEventKey(usageEventKeys, eventKey)) {
       return state2;
     }
-    const usageEvents = appendUsageEvent(state2.usageEvents, normalizedEvent);
-    if (!usageEvents.some((existingEvent) => usageEventIdentity(existingEvent) === eventKey)) {
+    const appendResult = appendUsageEvent(state2.usageEvents, normalizedEvent);
+    if (!appendResult.retained) {
       return state2;
+    }
+    usageEventKeys[eventKey] = true;
+    for (const evictedEvent of appendResult.evictedEvents) {
+      delete usageEventKeys[usageEventIdentity(evictedEvent)];
     }
     recorded = true;
     savedEvent = normalizedEvent;
     return {
       ...state2,
-      usageEvents,
-      threads: upsertThread(state2.threads, normalizedEvent)
+      usageEvents: appendResult.events,
+      threads: upsertThread(state2.threads, normalizedEvent),
+      meta: {
+        ...state2.meta,
+        usageEventKeys
+      }
     };
   });
   return { state, recorded, event: savedEvent };
