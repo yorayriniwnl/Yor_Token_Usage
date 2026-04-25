@@ -37,7 +37,7 @@ Browser Extension
 
 Components:
 
-- API server: Validates auth, extension origin, request bodies, rate limits, and returns quick responses.
+- API server: Validates auth, request bodies, rate limits, and browser CORS/origin hints, then returns quick responses.
 - Postgres: Durable source of truth. Indexes are designed around user/time and provider/model/time queries.
 - Redis: Fast abuse controls and queue backend. Redis failure should degrade non-critical endpoints, but ingest should fail closed for abuse controls in production.
 - Usage worker: Accepts queued Redis Stream batches, reclaims stale pending entries, idempotently writes events, aggregates quota windows, and dead-letters repeated failures.
@@ -63,9 +63,9 @@ Authorization:
 Extension validation:
 
 - CORS allows only `ALLOWED_EXTENSION_ORIGINS`.
-- `Origin` is required on API routes.
+- Browser `Origin` headers are checked when present, but are not an authentication or abuse-control boundary.
 - `X-Extension-Id` and `X-Install-Id` are required for device-bound operations.
-- Extension origin validation is defense-in-depth only; JWT auth is the real trust boundary.
+- JWT auth, per-user authorization, and rate limits are the real trust boundaries.
 
 Secrets/API keys:
 
@@ -122,8 +122,8 @@ For very high write volume, partition `usage_events` monthly by `occurred_at` an
 
 All endpoints require:
 
-- `Origin: chrome-extension://<allowed-extension-id>`
 - `Authorization: Bearer <jwt>` except health/metrics
+- Browser requests must pass CORS for `ALLOWED_EXTENSION_ORIGINS`; non-browser clients are controlled by auth and rate limits.
 - Device headers for device-aware endpoints:
   - `X-Install-Id`
   - `X-Extension-Id`
@@ -420,4 +420,4 @@ backend/
 - Configure DB backups and restore drills.
 - Load test usage ingestion with realistic batch sizes.
 - Verify CORS from the real published extension ID.
-- Verify rejected origins, invalid JWTs, replayed idempotency keys, and over-limit users.
+- Verify rejected browser origins, invalid JWTs, replayed idempotency keys, and over-limit users.

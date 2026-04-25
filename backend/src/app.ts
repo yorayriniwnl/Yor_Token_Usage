@@ -8,7 +8,7 @@ import { createUsageQueue } from "./jobs/usageQueue.js";
 import { prisma } from "./lib/prisma.js";
 import { redis } from "./lib/redis.js";
 import { registerErrorHandler } from "./middleware/errors.js";
-import { validateExtensionOrigin } from "./middleware/extensionOrigin.js";
+import { validateBrowserOrigin } from "./middleware/extensionOrigin.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { registerRequestLogging } from "./middleware/requestLog.js";
 import { authRoutes } from "./routes/auth.js";
@@ -66,13 +66,13 @@ export async function buildApp() {
     maxAge: 600
   });
 
-  app.addHook("preHandler", validateExtensionOrigin);
   app.addHook("preHandler", rateLimit({
     scope: "ip-global",
     limit: 600,
     windowSeconds: 60,
     key: (request) => request.ip
   }));
+  app.addHook("preHandler", validateBrowserOrigin);
 
   await registerRequestLogging(app);
   await registerErrorHandler(app);
