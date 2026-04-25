@@ -1277,21 +1277,195 @@ button:focus-visible {
     collapsed = true;
     state;
     callbacks;
+    refs = {};
     constructor(callbacks) {
       this.callbacks = callbacks;
       this.container = document.createElement("div");
       this.container.className = "yor-token-usage-root";
+      this.container.style.display = "none";
       this.shadow = this.container.attachShadow({ mode: "open" });
-      this.shadow.innerHTML = `<style>${styles}</style>`;
+      const style = document.createElement("style");
+      style.textContent = styles;
+      this.shadow.append(style);
+      this.mountShell();
+      this.shadow.addEventListener("click", (event) => this.handleClick(event));
       document.documentElement.appendChild(this.container);
+    }
+    mountShell() {
+      const template = document.createElement("template");
+      template.innerHTML = `
+      <div class="yor-root" data-ref="root">
+        <button class="yor-page-meter" data-action="toggle" data-ref="pageMeter" title="Open Yor Token Usage details">
+          <span>Length*: <strong data-ref="meterLength"></strong> tokens</span>
+          <span>| Cost: <strong data-ref="meterCost"></strong> credits</span>
+        </button>
+        <div class="yor-card yor-hidden" data-ref="card">
+          <div class="yor-head">
+            <div class="yor-title">
+              <div class="yor-brand">
+                <strong>Yor Token Usage</strong>
+                <span class="yor-status" data-ref="status"></span>
+              </div>
+              <span class="yor-meta" data-ref="meta"></span>
+              <div class="yor-quickline">
+                <strong data-ref="quickLength"></strong>
+                <span data-ref="quickCost"></span>
+              </div>
+            </div>
+            <button class="yor-button yor-icon-button" data-action="toggle" data-ref="toggleButton" title="Open details">Open</button>
+          </div>
+          <div class="yor-body yor-hidden" data-ref="body">
+            <div class="yor-kpis">
+              <div class="yor-stat">
+                <span class="yor-stat-label">Draft</span>
+                <span class="yor-stat-value" data-ref="draftValue"></span>
+                <span class="yor-stat-note" data-ref="draftNote"></span>
+              </div>
+              <div class="yor-stat">
+                <span class="yor-stat-label">Window</span>
+                <span class="yor-stat-value" data-ref="quotaValue"></span>
+                <span class="yor-stat-note" data-ref="quotaNote"></span>
+              </div>
+              <div class="yor-stat">
+                <span class="yor-stat-label">Thread</span>
+                <span class="yor-stat-value" data-ref="threadValue"></span>
+                <span class="yor-stat-note" data-ref="threadNote"></span>
+              </div>
+              <div class="yor-stat">
+                <span class="yor-stat-label">Reset</span>
+                <span class="yor-stat-value" data-ref="resetValue"></span>
+                <span class="yor-stat-note" data-ref="resetNote"></span>
+              </div>
+            </div>
+            <div class="yor-section">
+              <div class="yor-section-head"><strong>Quota pressure</strong><span data-ref="quotaPressure"></span></div>
+              <div class="yor-meter"><span data-ref="quotaBar"></span></div>
+              <div class="yor-section-head"><strong>Context pressure</strong><span data-ref="contextPressure"></span></div>
+              <div class="yor-meter"><span data-ref="contextBar"></span></div>
+            </div>
+            <div class="yor-section">
+              <div class="yor-section-head"><strong>Live conversation</strong><span data-ref="conversationPressure"></span></div>
+              <div class="yor-rows">
+                <div class="yor-row">
+                  <span class="yor-row-label">Last user</span>
+                  <span class="yor-row-main"><strong data-ref="lastUserStatus"></strong><span data-ref="lastUserText"></span></span>
+                  <span class="yor-row-value" data-ref="lastUserTokens"></span>
+                </div>
+                <div class="yor-row">
+                  <span class="yor-row-label">Last AI</span>
+                  <span class="yor-row-main"><strong data-ref="lastAssistantStatus"></strong><span data-ref="lastAssistantText"></span></span>
+                  <span class="yor-row-value" data-ref="lastAssistantTokens"></span>
+                </div>
+                <div class="yor-row">
+                  <span class="yor-row-label">Captured</span>
+                  <span class="yor-row-main"><strong data-ref="capturedStatus"></strong><span data-ref="capturedText"></span></span>
+                  <span class="yor-row-value" data-ref="capturedTokens"></span>
+                </div>
+              </div>
+            </div>
+            <div class="yor-section">
+              <div class="yor-section-head"><strong>Current draft breakdown</strong><span data-ref="sectionsSummary"></span></div>
+              <ul class="yor-list" data-ref="sectionsList"></ul>
+            </div>
+            <div class="yor-section">
+              <div class="yor-section-head"><strong>Totals</strong><span data-ref="privacyLabel"></span></div>
+              <div class="yor-rows">
+                <div class="yor-row">
+                  <span class="yor-row-label">Today</span>
+                  <span class="yor-row-main"><strong data-ref="todayTokens"></strong><span data-ref="todayPrompts"></span></span>
+                  <span class="yor-row-value" data-ref="todayPromptCount"></span>
+                </div>
+                <div class="yor-row">
+                  <span class="yor-row-label">7 days</span>
+                  <span class="yor-row-main"><strong data-ref="weekTokens"></strong><span>Across all tracked sites</span></span>
+                  <span class="yor-row-value" data-ref="weekTokensValue"></span>
+                </div>
+              </div>
+            </div>
+            <div class="yor-section">
+              <div class="yor-section-head"><strong>Token reduction</strong><span data-ref="suggestionsSummary"></span></div>
+              <ul class="yor-list" data-ref="suggestionsList"></ul>
+            </div>
+            <div class="yor-actions">
+              <button class="yor-button primary" data-action="copy-summary">Copy summary</button>
+              <button class="yor-button" data-action="copy-shorter" data-ref="copyShorterButton">Copy shorter</button>
+              <button class="yor-button" data-action="replace-prompt" data-ref="replacePromptButton">Replace draft</button>
+              <button class="yor-button" data-action="open-dashboard">Dashboard</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+      this.shadow.append(template.content.cloneNode(true));
+      this.shadow.querySelectorAll("[data-ref]").forEach((element) => {
+        this.refs[element.dataset.ref] = element;
+      });
     }
     setVisible(value) {
       this.visible = value;
-      this.container.style.display = value ? "" : "none";
+      const shouldShow = value && Boolean(this.state);
+      this.container.style.display = shouldShow ? "" : "none";
+      this.setHidden("root", !shouldShow);
     }
     toggleCollapsed() {
       this.collapsed = !this.collapsed;
       this.render(this.state);
+    }
+    handleClick(event) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("[data-action]");
+      if (!button || !this.shadow.contains(button)) return;
+      const action = button.dataset.action;
+      if (action === "toggle") {
+        this.toggleCollapsed();
+        return;
+      }
+      if (action === "copy-summary") {
+        this.callbacks.onCopySummary?.(this.state);
+        return;
+      }
+      if (action === "copy-shorter") {
+        this.callbacks.onCopyShorter();
+        return;
+      }
+      if (action === "replace-prompt") {
+        this.callbacks.onReplacePrompt();
+        return;
+      }
+      if (action === "open-dashboard") {
+        this.callbacks.onOpenDashboard?.();
+      }
+    }
+    setText(ref, value) {
+      const element = this.refs[ref];
+      if (element) element.textContent = String(value ?? "");
+    }
+    setHidden(ref, hidden) {
+      this.refs[ref]?.classList.toggle("yor-hidden", hidden);
+    }
+    setWidth(ref, value) {
+      const element = this.refs[ref];
+      if (element) element.style.width = `${value}%`;
+    }
+    setDisabled(ref, disabled) {
+      const element = this.refs[ref];
+      if (element) element.disabled = disabled;
+    }
+    strong(text) {
+      const element = document.createElement("strong");
+      element.textContent = String(text ?? "");
+      return element;
+    }
+    listItem(...children) {
+      const item = document.createElement("li");
+      for (const child of children) {
+        item.append(child instanceof Node ? child : document.createTextNode(String(child ?? "")));
+      }
+      return item;
+    }
+    renderList(ref, items) {
+      this.refs[ref]?.replaceChildren(...items);
     }
     render(state) {
       if (!state) return;
@@ -1318,121 +1492,66 @@ button:focus-visible {
       const lengthTokens = activeLengthTokens(state);
       const creditEstimate = activeCreditEstimate(state);
       const contextLabel = contextPercent !== void 0 ? `${formatPercent(contextPercent)} context` : "context unknown";
-      this.shadow.innerHTML = `
-      <style>${styles}</style>
-      <div class="yor-root ${this.visible ? "" : "yor-hidden"}">
-        <button class="yor-page-meter ${this.collapsed ? "" : "yor-hidden"}" data-action="toggle" title="Open Yor Token Usage details">
-          <span>Length*: <strong>${formatInteger(lengthTokens)}</strong> tokens</span>
-          <span>| Cost: <strong>${formatInteger(creditEstimate)}</strong> credits</span>
-        </button>
-        <div class="yor-card ${this.collapsed ? "yor-hidden" : ""}">
-          <div class="yor-head">
-            <div class="yor-title">
-              <div class="yor-brand">
-                <strong>Yor Token Usage</strong>
-                <span class="yor-status">${escapeHtml(statusText)}</span>
-              </div>
-              <span class="yor-meta">${escapeHtml(SITE_LABELS[state.site] ?? state.site)} &middot; ${escapeHtml(state.model || "Unknown model")} &middot; ${escapeHtml(contextLabel)}</span>
-              <div class="yor-quickline">
-                <strong>Length*: ${formatInteger(lengthTokens)} tokens</strong>
-                <span>Cost: ${formatInteger(creditEstimate)} credits</span>
-              </div>
-            </div>
-            <button class="yor-button yor-icon-button" data-action="toggle" title="${this.collapsed ? "Open details" : "Hide details"}">${this.collapsed ? "Open" : "Hide"}</button>
-          </div>
-          <div class="yor-body ${this.collapsed ? "yor-hidden" : ""}">
-            <div class="yor-kpis">
-              <div class="yor-stat">
-                <span class="yor-stat-label">Draft</span>
-                <span class="yor-stat-value">${hasDraft ? formatTokens(state.analysis.inputTokens) : "No draft"}</span>
-                <span class="yor-stat-note">${hasDraft ? `${formatTokens(state.analysis.outputTokensEstimate)} output est.` : "Composer is empty"}</span>
-              </div>
-              <div class="yor-stat">
-                <span class="yor-stat-label">Window</span>
-                <span class="yor-stat-value">${quotaPrimary}</span>
-                <span class="yor-stat-note">${escapeHtml(quotaNote)}</span>
-              </div>
-              <div class="yor-stat">
-                <span class="yor-stat-label">Thread</span>
-                <span class="yor-stat-value">${formatTokens(state.conversation.totalTokens)}</span>
-                <span class="yor-stat-note">${messages.length} messages detected</span>
-              </div>
-              <div class="yor-stat">
-                <span class="yor-stat-label">Reset</span>
-                <span class="yor-stat-value">${escapeHtml(resetLabel)}</span>
-                <span class="yor-stat-note">${escapeHtml(state.quota.nextReset?.localLabel ?? "Schedule estimate")}</span>
-              </div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Quota pressure</strong><span>${percent !== void 0 ? formatPercent(percent) : "No percent"}</span></div>
-              <div class="yor-meter"><span style="width: ${Math.min(100, Math.max(quotaBarPercent, quotaBarPercent > 0 ? 4 : 0))}%"></span></div>
-              <div class="yor-section-head"><strong>Context pressure</strong><span>${contextPercent !== void 0 ? `${formatPercent(contextPercent)} of ${formatTokens(contextWindow)}` : "Unknown"}</span></div>
-              <div class="yor-meter"><span style="width: ${Math.min(100, Math.max(contextPercent ?? 0, contextPercent ? 4 : 0))}%"></span></div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Live conversation</strong><span>${formatTokens(state.conversation.promptTokens)} user / ${formatTokens(state.conversation.outputTokens)} assistant</span></div>
-              <div class="yor-rows">
-                <div class="yor-row">
-                  <span class="yor-row-label">Last user</span>
-                  <span class="yor-row-main"><strong>${lastUser ? "Detected" : "Missing"}</strong>${escapeHtml(lastUser ? truncate(lastUser.text, 180) : "No user message found in the visible thread.")}</span>
-                  <span class="yor-row-value">${formatTokens(lastUserTokens)}</span>
-                </div>
-                <div class="yor-row">
-                  <span class="yor-row-label">Last AI</span>
-                  <span class="yor-row-main"><strong>${lastAssistant ? "Detected" : "Missing"}</strong>${escapeHtml(lastAssistant ? truncate(lastAssistant.text, 180) : "No assistant message found in the visible thread.")}</span>
-                  <span class="yor-row-value">${formatTokens(lastAssistantTokens)}</span>
-                </div>
-                <div class="yor-row">
-                  <span class="yor-row-label">Captured</span>
-                  <span class="yor-row-main"><strong>${lastEvent ? formatShortTime(lastEvent.timestamp) : "Not yet"}</strong>${escapeHtml(recentLabel)}</span>
-                  <span class="yor-row-value">${lastEvent ? formatTokens(lastEvent.totalTokens) : "\u2014"}</span>
-                </div>
-              </div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Current draft breakdown</strong><span>${hasDraft ? `${sections.length} sections` : "No draft"}</span></div>
-              <ul class="yor-list">
-                ${hasDraft && sections.length ? sections.map((section) => `<li><strong>${escapeHtml(section.type)}</strong> &middot; ${formatTokens(section.tokens)} &middot; ${escapeHtml(truncate(section.label, 90))}</li>`).join("") : "<li>No draft sections to analyze right now.</li>"}
-              </ul>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Totals</strong><span>${escapeHtml(state.privacyLabel)}</span></div>
-              <div class="yor-rows">
-                <div class="yor-row">
-                  <span class="yor-row-label">Today</span>
-                  <span class="yor-row-main"><strong>${formatTokens(state.summary?.tokensToday ?? 0)} tokens</strong>${state.summary?.promptsToday ?? 0} captured prompts</span>
-                  <span class="yor-row-value">${state.summary?.promptsToday ?? 0}</span>
-                </div>
-                <div class="yor-row">
-                  <span class="yor-row-label">7 days</span>
-                  <span class="yor-row-main"><strong>${formatTokens(state.summary?.tokensThisWeek ?? 0)} tokens</strong>Across all tracked sites</span>
-                  <span class="yor-row-value">${formatTokens(state.summary?.tokensThisWeek ?? 0)}</span>
-                </div>
-              </div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Token reduction</strong><span>${hasDraft ? `${state.analysis.compressionScore}% potential` : "No draft"}</span></div>
-              <ul class="yor-list">
-                ${suggestions.length ? suggestions.map((item) => `<li><strong>${escapeHtml(item.title)}</strong> &middot; save ~${formatTokens(item.estimatedSavings)}<br>${escapeHtml(item.description ?? "")}</li>`).join("") : `<li>${hasDraft ? "No high-impact reductions found for this draft." : "No draft to optimize yet."}</li>`}
-              </ul>
-            </div>
-            <div class="yor-actions">
-              <button class="yor-button primary" data-action="copy-summary">Copy summary</button>
-              <button class="yor-button" data-action="copy-shorter" ${hasDraft ? "" : "disabled"}>Copy shorter</button>
-              <button class="yor-button" data-action="replace-prompt" ${hasDraft ? "" : "disabled"}>Replace draft</button>
-              <button class="yor-button" data-action="open-dashboard">Dashboard</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-      this.shadow.querySelector('[data-action="copy-summary"]')?.addEventListener("click", () => this.callbacks.onCopySummary?.(this.state));
-      this.shadow.querySelector('[data-action="copy-shorter"]')?.addEventListener("click", () => this.callbacks.onCopyShorter());
-      this.shadow.querySelector('[data-action="replace-prompt"]')?.addEventListener("click", () => this.callbacks.onReplacePrompt());
-      this.shadow.querySelector('[data-action="open-dashboard"]')?.addEventListener("click", () => this.callbacks.onOpenDashboard?.());
-      this.shadow.querySelectorAll('[data-action="toggle"]').forEach((button) => {
-        button.addEventListener("click", () => this.toggleCollapsed());
-      });
+      this.container.style.display = this.visible ? "" : "none";
+      this.setHidden("root", !this.visible);
+      this.setHidden("pageMeter", !this.collapsed);
+      this.setHidden("card", this.collapsed);
+      this.setHidden("body", this.collapsed);
+      this.setText("meterLength", formatInteger(lengthTokens));
+      this.setText("meterCost", formatInteger(creditEstimate));
+      this.setText("status", statusText);
+      this.setText("meta", `${SITE_LABELS[state.site] ?? state.site} \u00b7 ${state.model || "Unknown model"} \u00b7 ${contextLabel}`);
+      this.setText("quickLength", `Length*: ${formatInteger(lengthTokens)} tokens`);
+      this.setText("quickCost", `Cost: ${formatInteger(creditEstimate)} credits`);
+      this.setText("toggleButton", this.collapsed ? "Open" : "Hide");
+      if (this.refs.toggleButton) {
+        this.refs.toggleButton.title = this.collapsed ? "Open details" : "Hide details";
+      }
+      this.setText("draftValue", hasDraft ? formatTokens(state.analysis.inputTokens) : "No draft");
+      this.setText("draftNote", hasDraft ? `${formatTokens(state.analysis.outputTokensEstimate)} output est.` : "Composer is empty");
+      this.setText("quotaValue", quotaPrimary);
+      this.setText("quotaNote", quotaNote);
+      this.setText("threadValue", formatTokens(state.conversation.totalTokens));
+      this.setText("threadNote", `${messages.length} messages detected`);
+      this.setText("resetValue", resetLabel);
+      this.setText("resetNote", state.quota.nextReset?.localLabel ?? "Schedule estimate");
+      this.setText("quotaPressure", percent !== void 0 ? formatPercent(percent) : "No percent");
+      this.setWidth("quotaBar", Math.min(100, Math.max(quotaBarPercent, quotaBarPercent > 0 ? 4 : 0)));
+      this.setText("contextPressure", contextPercent !== void 0 ? `${formatPercent(contextPercent)} of ${formatTokens(contextWindow)}` : "Unknown");
+      this.setWidth("contextBar", Math.min(100, Math.max(contextPercent ?? 0, contextPercent ? 4 : 0)));
+      this.setText("conversationPressure", `${formatTokens(state.conversation.promptTokens)} user / ${formatTokens(state.conversation.outputTokens)} assistant`);
+      this.setText("lastUserStatus", lastUser ? "Detected" : "Missing");
+      this.setText("lastUserText", lastUser ? truncate(lastUser.text, 180) : "No user message found in the visible thread.");
+      this.setText("lastUserTokens", formatTokens(lastUserTokens));
+      this.setText("lastAssistantStatus", lastAssistant ? "Detected" : "Missing");
+      this.setText("lastAssistantText", lastAssistant ? truncate(lastAssistant.text, 180) : "No assistant message found in the visible thread.");
+      this.setText("lastAssistantTokens", formatTokens(lastAssistantTokens));
+      this.setText("capturedStatus", lastEvent ? formatShortTime(lastEvent.timestamp) : "Not yet");
+      this.setText("capturedText", recentLabel);
+      this.setText("capturedTokens", lastEvent ? formatTokens(lastEvent.totalTokens) : "\u2014");
+      this.setText("sectionsSummary", hasDraft ? `${sections.length} sections` : "No draft");
+      this.renderList("sectionsList", hasDraft && sections.length ? sections.map((section) => this.listItem(
+        this.strong(section.type),
+        ` \u00b7 ${formatTokens(section.tokens)} \u00b7 ${truncate(section.label, 90)}`
+      )) : [this.listItem("No draft sections to analyze right now.")]);
+      this.setText("privacyLabel", state.privacyLabel);
+      this.setText("todayTokens", `${formatTokens(state.summary?.tokensToday ?? 0)} tokens`);
+      this.setText("todayPrompts", `${state.summary?.promptsToday ?? 0} captured prompts`);
+      this.setText("todayPromptCount", state.summary?.promptsToday ?? 0);
+      this.setText("weekTokens", `${formatTokens(state.summary?.tokensThisWeek ?? 0)} tokens`);
+      this.setText("weekTokensValue", formatTokens(state.summary?.tokensThisWeek ?? 0));
+      this.setText("suggestionsSummary", hasDraft ? `${state.analysis.compressionScore}% potential` : "No draft");
+      this.renderList("suggestionsList", suggestions.length ? suggestions.map((item) => {
+        const lineBreak = document.createElement("br");
+        return this.listItem(
+          this.strong(item.title),
+          ` \u00b7 save ~${formatTokens(item.estimatedSavings)}`,
+          lineBreak,
+          item.description ?? ""
+        );
+      }) : [this.listItem(hasDraft ? "No high-impact reductions found for this draft." : "No draft to optimize yet.")]);
+      this.setDisabled("copyShorterButton", !hasDraft);
+      this.setDisabled("replacePromptButton", !hasDraft);
     }
   };
 
