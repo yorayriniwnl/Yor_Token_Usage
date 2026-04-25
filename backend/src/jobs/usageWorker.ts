@@ -8,6 +8,15 @@ const STREAM = "usage-events";
 const GROUP = "usage-workers";
 const DEAD = "usage-events:dead";
 const MAX_ATTEMPTS = 5;
+const READ_COUNT = 10;
+const BLOCK_MS = 5_000;
+const STALE_PENDING_IDLE_MS = 60_000;
+const MAX_RECLAIM_BATCHES = 5;
+
+type RedisStreamMessage = [string, string[]];
+type RedisStreamReadResult = Array<[string, RedisStreamMessage[]]> | null;
+type RedisAutoClaimResult = [string, RedisStreamMessage[], string[]?];
+type RedisPendingDetail = [string, string, number | string, number | string];
 
 const redis = new Redis(env.REDIS_URL, {
   maxRetriesPerRequest: null,
@@ -33,11 +42,75 @@ function fieldsToObject(fields: string[]): Record<string, string> {
 async function requeueOrDeadLetter(id: string, payload: UsageBatchJob, error: unknown): Promise<void> {
   const attempts = (payload.attempts ?? 0) + 1;
   if (attempts >= MAX_ATTEMPTS) {
-    await redis.xadd(DEAD, "*", "payload", JSON.stringify(payload), "error", String(error));
+    await deadLetter(id, payload, error);
   } else {
     await redis.xadd(STREAM, "*", "payload", JSON.stringify({ ...payload, attempts }));
+    await redis.xack(STREAM, GROUP, id);
   }
+}
+
+async function deadLetter(id: string, payload: UsageBatchJob, error: unknown): Promise<void> {
+  await redis.xadd(DEAD, "*", "payload", JSON.stringify(payload), "error", String(error));
   await redis.xack(STREAM, GROUP, id);
+}
+
+async function deadLetterRaw(id: string, fields: string[], error: unknown): Promise<void> {
+  await redis.xadd(DEAD, "*", "payload", fieldsToObject(fields).payload ?? "{}", "error", String(error));
+  await redis.xack(STREAM, GROUP, id);
+}
+
+async function getDeliveryCount(id: string): Promise<number | undefined> {
+  const pending = await redis.xpending(STREAM, GROUP, id, id, 1) as RedisPendingDetail[];
+  const deliveryCount = pending[0]?.[3];
+  return deliveryCount === undefined ? undefined : Number(deliveryCount);
+}
+
+async function handleMessage(id: string, fields: string[], deliveryCount?: number): Promise<void> {
+  let payload: UsageBatchJob;
+  try {
+    payload = JSON.parse(fieldsToObject(fields).payload ?? "{}") as UsageBatchJob;
+  } catch (error) {
+    console.error({ id, error }, "usage ingestion payload was invalid JSON");
+    await deadLetterRaw(id, fields, error);
+    return;
+  }
+
+  if (deliveryCount !== undefined && deliveryCount > MAX_ATTEMPTS) {
+    await deadLetter(id, payload, `message exceeded ${MAX_ATTEMPTS} Redis deliveries without acknowledgement`);
+    return;
+  }
+
+  try {
+    await processUsageBatch(prisma, payload);
+    await redis.xack(STREAM, GROUP, id);
+  } catch (error) {
+    console.error({ id, error }, "usage ingestion failed");
+    await requeueOrDeadLetter(id, payload, error);
+  }
+}
+
+async function reclaimStalePending(consumer: string): Promise<void> {
+  let cursor = "0-0";
+
+  for (let batch = 0; batch < MAX_RECLAIM_BATCHES; batch += 1) {
+    const result = await redis.xautoclaim(
+      STREAM,
+      GROUP,
+      consumer,
+      STALE_PENDING_IDLE_MS,
+      cursor,
+      "COUNT",
+      READ_COUNT
+    ) as RedisAutoClaimResult;
+
+    const [nextCursor, messages] = result;
+    for (const [id, fields] of messages) {
+      await handleMessage(id, fields, await getDeliveryCount(id));
+    }
+
+    cursor = nextCursor;
+    if (cursor === "0-0") break;
+  }
 }
 
 async function loop(): Promise<void> {
@@ -45,31 +118,26 @@ async function loop(): Promise<void> {
   await ensureGroup();
 
   for (;;) {
+    await reclaimStalePending(consumer);
+
     const result = await redis.xreadgroup(
       "GROUP",
       GROUP,
       consumer,
       "COUNT",
-      10,
+      READ_COUNT,
       "BLOCK",
-      5_000,
+      BLOCK_MS,
       "STREAMS",
       STREAM,
       ">"
-    ) as Array<[string, Array<[string, string[]]>]> | null;
+    ) as RedisStreamReadResult;
 
     if (!result) continue;
 
     for (const [, messages] of result) {
       for (const [id, fields] of messages) {
-        const payload = JSON.parse(fieldsToObject(fields).payload ?? "{}") as UsageBatchJob;
-        try {
-          await processUsageBatch(prisma, payload);
-          await redis.xack(STREAM, GROUP, id);
-        } catch (error) {
-          console.error({ id, error }, "usage ingestion failed");
-          await requeueOrDeadLetter(id, payload, error);
-        }
+        await handleMessage(id, fields);
       }
     }
   }

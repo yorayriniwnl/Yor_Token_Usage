@@ -40,7 +40,7 @@ Components:
 - API server: Validates auth, extension origin, request bodies, rate limits, and returns quick responses.
 - Postgres: Durable source of truth. Indexes are designed around user/time and provider/model/time queries.
 - Redis: Fast abuse controls and queue backend. Redis failure should degrade non-critical endpoints, but ingest should fail closed for abuse controls in production.
-- Usage worker: Accepts queued Redis Stream batches, idempotently writes events, aggregates quota windows, and dead-letters repeated failures.
+- Usage worker: Accepts queued Redis Stream batches, reclaims stale pending entries, idempotently writes events, aggregates quota windows, and dead-letters repeated failures.
 - Auth provider: Issues user JWTs. Backend validates `issuer`, `audience`, and JWKS signature.
 - Observability: Metrics at `/metrics`, API request logs in DB, app logs in JSON.
 - Secrets: `.env` only in local dev. Production uses cloud secret manager. User secrets go in `user_secrets` encrypted with KMS envelope keys.
