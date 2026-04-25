@@ -165,6 +165,12 @@ function sum(values) {
 function average(values) {
   return values.length ? sum(values) / values.length : 0;
 }
+function median(values) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const midpoint = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[midpoint] : (sorted[midpoint - 1] + sorted[midpoint]) / 2;
+}
 function round(value, digits = 0) {
   const precision = 10 ** digits;
   return Math.round(value * precision) / precision;
@@ -249,6 +255,25 @@ function calculateStreak(events) {
   }
   return streak;
 }
+function robustTokenBaseline(values) {
+  return median(values.filter((value) => value > 0));
+}
+function detectTokenAnomalies(events, preferences) {
+  const normalTotals = [];
+  const anomalies = [];
+  const largePromptThreshold = Math.max(0, preferences.alerts.largePromptTokens);
+  const anomalyMultiplier = Math.max(1, preferences.alerts.anomalyMultiplier);
+  for (const event of events) {
+    const baseline = robustTokenBaseline(normalTotals);
+    const threshold = Math.max(largePromptThreshold, baseline > 0 ? baseline * anomalyMultiplier : 0);
+    if (event.totalTokens >= threshold) {
+      anomalies.push(event);
+      continue;
+    }
+    normalTotals.push(event.totalTokens);
+  }
+  return anomalies.slice(-25).reverse();
+}
 function buildAnalytics(events, preferences) {
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
   const now = Date.now();
@@ -279,9 +304,7 @@ function buildAnalytics(events, preferences) {
   const averagePromptTokens = average(sorted.map((event) => event.promptTokens));
   const lastSevenDays = byDay.slice(-7);
   const burnRate = average(lastSevenDays.map((day) => day.tokens));
-  const baseline = average(sorted.map((event) => event.totalTokens));
-  const anomalyThreshold = baseline * preferences.alerts.anomalyMultiplier;
-  const anomalies = sorted.filter((event) => event.totalTokens >= Math.max(anomalyThreshold, preferences.alerts.largePromptTokens)).slice(-25).reverse();
+  const anomalies = detectTokenAnomalies(sorted, preferences);
   return {
     byDay,
     byWeek,
@@ -508,6 +531,16 @@ function normalizeUsageEvents(rawEvents) {
     return true;
   }).sort((a, b) => a.timestamp - b.timestamp).slice(-HISTORY_LIMIT);
 }
+function appendUsageEvent(events, event) {
+  const nextEvents = [...events];
+  if (!nextEvents.length || event.timestamp >= nextEvents[nextEvents.length - 1].timestamp) {
+    nextEvents.push(event);
+  } else {
+    const insertAt = nextEvents.findIndex((existingEvent) => existingEvent.timestamp > event.timestamp);
+    nextEvents.splice(insertAt === -1 ? nextEvents.length : insertAt, 0, event);
+  }
+  return nextEvents.slice(-HISTORY_LIMIT);
+}
 function isTrackingEnabled(preferences, site) {
   return isKnownSite(site) && preferences.sites?.[site]?.enabled === true;
 }
@@ -546,6 +579,9 @@ function rebuildThreads(events, fallbackThreads = {}) {
   }
   return threads;
 }
+function hasStoredThreads(threads) {
+  return Boolean(threads && typeof threads === "object" && !Array.isArray(threads) && Object.keys(threads).length > 0);
+}
 function hydrateState(raw) {
   const preferences = mergePreferences(raw?.preferences);
   const usageEvents = normalizeUsageEvents(raw?.usageEvents);
@@ -554,7 +590,7 @@ function hydrateState(raw) {
     preferences,
     sessions: normalizeSessions(raw?.sessions),
     usageEvents,
-    threads: rebuildThreads(usageEvents, raw?.threads ?? {}),
+    threads: hasStoredThreads(raw?.threads) ? raw.threads : rebuildThreads(usageEvents, {}),
     meta: {
       notificationTimestamps: normalizeNotificationTimestamps(raw?.meta?.notificationTimestamps)
     }
@@ -664,16 +700,17 @@ function upsertThread(threads, event) {
     contextGrowth: []
   };
   const totalTokens = existing.totalTokens + event.totalTokens;
+  const isLatestEvent = event.timestamp >= existing.lastUpdated;
   return {
     ...threads,
     [key]: {
       ...existing,
-      model: event.model,
+      model: isLatestEvent ? event.model : existing.model,
       messageCount: existing.messageCount + (event.outputTokens > 0 ? 2 : 1),
       promptTokens: existing.promptTokens + event.promptTokens,
       outputTokens: existing.outputTokens + event.outputTokens,
       totalTokens,
-      lastUpdated: event.timestamp,
+      lastUpdated: Math.max(existing.lastUpdated, event.timestamp),
       contextGrowth: [...existing.contextGrowth.slice(-24), totalTokens]
     }
   };
@@ -691,13 +728,16 @@ async function recordUsageEvent(event) {
     if (state2.usageEvents.some((existingEvent) => usageEventIdentity(existingEvent) === eventKey)) {
       return state2;
     }
+    const usageEvents = appendUsageEvent(state2.usageEvents, normalizedEvent);
+    if (!usageEvents.some((existingEvent) => usageEventIdentity(existingEvent) === eventKey)) {
+      return state2;
+    }
     recorded = true;
     savedEvent = normalizedEvent;
-    const usageEvents = normalizeUsageEvents([...state2.usageEvents, normalizedEvent]);
     return {
       ...state2,
       usageEvents,
-      threads: rebuildThreads(usageEvents, state2.threads)
+      threads: upsertThread(state2.threads, normalizedEvent)
     };
   });
   return { state, recorded, event: savedEvent };
