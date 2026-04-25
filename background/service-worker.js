@@ -17,13 +17,53 @@ var MODEL_CATALOG = {
     label: "Generic model",
     contextWindow: 128e3
   },
+  "gpt-5.5": {
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 5e-3,
+    estimatedOutputCostPer1k: 0.03,
+    quotaTier: "Premium"
+  },
+  "gpt-5.4": {
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 25e-4,
+    estimatedOutputCostPer1k: 0.015,
+    quotaTier: "Premium"
+  },
+  "gpt-5.4-mini": {
+    id: "gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    contextWindow: 128e3,
+    estimatedInputCostPer1k: 75e-5,
+    estimatedOutputCostPer1k: 45e-4,
+    quotaTier: "Mini"
+  },
+  "gpt-5.4-nano": {
+    id: "gpt-5.4-nano",
+    label: "GPT-5.4 nano",
+    contextWindow: 128e3,
+    estimatedInputCostPer1k: 2e-4,
+    estimatedOutputCostPer1k: 125e-5,
+    quotaTier: "Nano"
+  },
   "gpt-4o": {
     id: "gpt-4o",
     label: "GPT-4o",
     contextWindow: 128e3,
-    estimatedInputCostPer1k: 5e-3,
-    estimatedOutputCostPer1k: 0.015,
+    estimatedInputCostPer1k: 25e-4,
+    estimatedOutputCostPer1k: 0.01,
     quotaTier: "Premium"
+  },
+  "gpt-4o-mini": {
+    id: "gpt-4o-mini",
+    label: "GPT-4o mini",
+    contextWindow: 128e3,
+    estimatedInputCostPer1k: 15e-5,
+    estimatedOutputCostPer1k: 6e-4,
+    quotaTier: "Mini"
   },
   "gpt-4.1": {
     id: "gpt-4.1",
@@ -33,21 +73,141 @@ var MODEL_CATALOG = {
     estimatedOutputCostPer1k: 8e-3,
     quotaTier: "Premium"
   },
+  "gpt-4.1-mini": {
+    id: "gpt-4.1-mini",
+    label: "GPT-4.1 mini",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 4e-4,
+    estimatedOutputCostPer1k: 16e-4,
+    quotaTier: "Mini"
+  },
+  "gpt-4.1-nano": {
+    id: "gpt-4.1-nano",
+    label: "GPT-4.1 nano",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 1e-4,
+    estimatedOutputCostPer1k: 4e-4,
+    quotaTier: "Nano"
+  },
+  o3: {
+    id: "o3",
+    label: "OpenAI o3",
+    contextWindow: 2e5,
+    estimatedInputCostPer1k: 2e-3,
+    estimatedOutputCostPer1k: 8e-3,
+    quotaTier: "Reasoning"
+  },
+  "o3-mini": {
+    id: "o3-mini",
+    label: "OpenAI o3 mini",
+    contextWindow: 2e5,
+    estimatedInputCostPer1k: 11e-4,
+    estimatedOutputCostPer1k: 44e-4,
+    quotaTier: "Reasoning mini"
+  },
+  "o4-mini": {
+    id: "o4-mini",
+    label: "OpenAI o4 mini",
+    contextWindow: 2e5,
+    estimatedInputCostPer1k: 11e-4,
+    estimatedOutputCostPer1k: 44e-4,
+    quotaTier: "Reasoning mini"
+  },
+  "claude-opus-4.7": {
+    id: "claude-opus-4.7",
+    label: "Claude Opus 4.7",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 5e-3,
+    estimatedOutputCostPer1k: 0.025,
+    quotaTier: "Opus"
+  },
+  "claude-opus-4.1": {
+    id: "claude-opus-4.1",
+    label: "Claude Opus 4.1",
+    contextWindow: 2e5,
+    estimatedInputCostPer1k: 0.015,
+    estimatedOutputCostPer1k: 0.075,
+    quotaTier: "Opus"
+  },
+  "claude-opus-3": {
+    id: "claude-opus-3",
+    label: "Claude Opus 3",
+    contextWindow: 2e5,
+    estimatedInputCostPer1k: 0.015,
+    estimatedOutputCostPer1k: 0.075,
+    quotaTier: "Opus"
+  },
   "claude-sonnet": {
     id: "claude-sonnet",
-    label: "Claude Sonnet",
+    label: "Claude Sonnet 4",
     contextWindow: 2e5,
     estimatedInputCostPer1k: 3e-3,
     estimatedOutputCostPer1k: 0.015,
     quotaTier: "Pro"
   },
+  "claude-sonnet-4.6": {
+    id: "claude-sonnet-4.6",
+    label: "Claude Sonnet 4.6",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 3e-3,
+    estimatedOutputCostPer1k: 0.015,
+    quotaTier: "Pro"
+  },
+  "claude-haiku-4.5": {
+    id: "claude-haiku-4.5",
+    label: "Claude Haiku 4.5",
+    contextWindow: 2e5,
+    estimatedInputCostPer1k: 1e-3,
+    estimatedOutputCostPer1k: 5e-3,
+    quotaTier: "Haiku"
+  },
+  "claude-haiku-3.5": {
+    id: "claude-haiku-3.5",
+    label: "Claude Haiku 3.5",
+    contextWindow: 2e5,
+    estimatedInputCostPer1k: 8e-4,
+    estimatedOutputCostPer1k: 4e-3,
+    quotaTier: "Haiku"
+  },
   "gemini-pro": {
     id: "gemini-pro",
-    label: "Gemini Pro",
+    label: "Gemini 2.5 Pro",
     contextWindow: 1e6,
     estimatedInputCostPer1k: 125e-5,
-    estimatedOutputCostPer1k: 5e-3,
+    estimatedOutputCostPer1k: 0.01,
     quotaTier: "Advanced"
+  },
+  "gemini-2.5-flash": {
+    id: "gemini-2.5-flash",
+    label: "Gemini 2.5 Flash",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 3e-4,
+    estimatedOutputCostPer1k: 25e-4,
+    quotaTier: "Flash"
+  },
+  "gemini-2.5-flash-lite": {
+    id: "gemini-2.5-flash-lite",
+    label: "Gemini 2.5 Flash-Lite",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 1e-4,
+    estimatedOutputCostPer1k: 4e-4,
+    quotaTier: "Flash-Lite"
+  },
+  "gemini-2.0-flash": {
+    id: "gemini-2.0-flash",
+    label: "Gemini 2.0 Flash",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 1e-4,
+    estimatedOutputCostPer1k: 4e-4,
+    quotaTier: "Flash"
+  },
+  "gemini-2.0-flash-lite": {
+    id: "gemini-2.0-flash-lite",
+    label: "Gemini 2.0 Flash-Lite",
+    contextWindow: 1e6,
+    estimatedInputCostPer1k: 75e-6,
+    estimatedOutputCostPer1k: 3e-4,
+    quotaTier: "Flash-Lite"
   },
   "sonar-pro": {
     id: "sonar-pro",
@@ -64,8 +224,77 @@ var MODEL_CATALOG = {
     estimatedInputCostPer1k: 3e-3,
     estimatedOutputCostPer1k: 0.015,
     quotaTier: "Premium+"
+  },
+  "grok-3-mini": {
+    id: "grok-3-mini",
+    label: "Grok 3 mini",
+    contextWindow: 131072,
+    estimatedInputCostPer1k: 3e-4,
+    estimatedOutputCostPer1k: 5e-4,
+    quotaTier: "Mini"
   }
 };
+function normalizeModelKey(value) {
+  return String(value ?? "").toLowerCase().replace(/\bmodel\b/g, "").replace(/\bnew\b/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+var MODEL_LOOKUP = Object.fromEntries(Object.keys(MODEL_CATALOG).map((id) => [normalizeModelKey(id), id]));
+var MODEL_MATCHERS = [
+  [/^gpt-5-5/, "gpt-5.5"],
+  [/^gpt-5-4-mini/, "gpt-5.4-mini"],
+  [/^gpt-5-4-nano/, "gpt-5.4-nano"],
+  [/^gpt-5-4/, "gpt-5.4"],
+  [/^gpt-4o-mini|^gpt-4-o-mini/, "gpt-4o-mini"],
+  [/^gpt-4o|^gpt-4-o/, "gpt-4o"],
+  [/^gpt-4-1-mini/, "gpt-4.1-mini"],
+  [/^gpt-4-1-nano/, "gpt-4.1-nano"],
+  [/^gpt-4-1/, "gpt-4.1"],
+  [/^o4-mini/, "o4-mini"],
+  [/^o3-mini/, "o3-mini"],
+  [/^o3/, "o3"],
+  [/claude.*opus.*4-(7|6|5)|opus.*4-(7|6|5)/, "claude-opus-4.7"],
+  [/claude.*opus.*4-1|opus.*4-1|claude.*opus.*4|opus.*4/, "claude-opus-4.1"],
+  [/claude.*opus.*3|opus.*3/, "claude-opus-3"],
+  [/claude.*sonnet.*4-6|sonnet.*4-6/, "claude-sonnet-4.6"],
+  [/claude.*sonnet|sonnet/, "claude-sonnet"],
+  [/claude.*haiku.*4-5|haiku.*4-5/, "claude-haiku-4.5"],
+  [/claude.*haiku.*3-5|haiku.*3-5/, "claude-haiku-3.5"],
+  [/claude.*haiku|haiku/, "claude-haiku-4.5"],
+  [/gemini.*2-5.*flash-lite|gemini-2-5-flash-lite/, "gemini-2.5-flash-lite"],
+  [/gemini.*2-5.*flash|gemini-2-5-flash/, "gemini-2.5-flash"],
+  [/gemini.*2-0.*flash-lite|gemini-2-0-flash-lite/, "gemini-2.0-flash-lite"],
+  [/gemini.*2-0.*flash|gemini-2-0-flash/, "gemini-2.0-flash"],
+  [/gemini.*pro|gemini-pro/, "gemini-pro"],
+  [/gemini.*flash-lite|flash-lite/, "gemini-2.5-flash-lite"],
+  [/gemini.*flash|flash/, "gemini-2.5-flash"],
+  [/sonar.*pro|perplexity.*pro/, "sonar-pro"],
+  [/grok.*3.*mini|grok-3-mini/, "grok-3-mini"],
+  [/grok.*3|grok-3/, "grok-3"]
+];
+var SITE_MODEL_FALLBACKS = {
+  chatgpt: "gpt-4o",
+  claude: "claude-sonnet",
+  gemini: "gemini-2.5-flash",
+  perplexity: "sonar-pro",
+  grok: "grok-3",
+  generic: "generic"
+};
+function findKnownModelProfile(model) {
+  const key = normalizeModelKey(model);
+  const exactId = MODEL_LOOKUP[key];
+  if (exactId) return MODEL_CATALOG[exactId];
+  for (const [pattern, id] of MODEL_MATCHERS) {
+    if (pattern.test(key)) return MODEL_CATALOG[id];
+  }
+  return void 0;
+}
+function resolveModelProfile(model, site = "generic") {
+  const knownProfile = findKnownModelProfile(model);
+  if (knownProfile) return knownProfile;
+  return MODEL_CATALOG[SITE_MODEL_FALLBACKS[site] ?? "generic"] ?? MODEL_CATALOG.generic;
+}
+function modelLabelForDisplay(model) {
+  return findKnownModelProfile(model)?.label ?? model;
+}
 function makeResetRule(kind, description, intervalMinutes) {
   return {
     kind,
@@ -219,7 +448,7 @@ function formatPercent(value) {
 // src/analytics/usageAnalytics.ts
 function eventCost(event, preferences) {
   const siteSettings = preferences.sites[event.site] ?? DEFAULT_PREFERENCES.sites.generic;
-  const modelProfile = MODEL_CATALOG[event.model] ?? MODEL_CATALOG.generic;
+  const modelProfile = resolveModelProfile(event.model, event.site);
   const inputRate = nonNegativeNumberOr(siteSettings.costInputPer1k, modelProfile.estimatedInputCostPer1k ?? 0);
   const outputRate = nonNegativeNumberOr(siteSettings.costOutputPer1k, modelProfile.estimatedOutputCostPer1k ?? 0);
   return event.promptTokens / 1e3 * inputRate + event.outputTokens / 1e3 * outputRate;
@@ -297,7 +526,7 @@ function buildAnalytics(events, preferences, now = Date.now()) {
   }
   const byDay = fillWindow(fourteenDaysAgo, 14, 864e5, dayMap);
   const byWeek = fillWindow(eightWeeksAgo, 8, 7 * 864e5, weekMap);
-  const byModel = aggregateBy(sorted, (event) => event.model, preferences, (key) => MODEL_CATALOG[key]?.label ?? key);
+  const byModel = aggregateBy(sorted, (event) => event.model, preferences, modelLabelForDisplay);
   const bySite = aggregateBy(sorted, (event) => event.site, preferences, (key) => SITE_LABELS[key] ?? key);
   const peakDay = [...byDay].sort((a, b) => b.tokens - a.tokens)[0];
   const averagePromptTokens = average(sorted.map((event) => event.promptTokens));

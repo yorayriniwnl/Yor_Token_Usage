@@ -1051,6 +1051,80 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
     grok: 128e3,
     generic: 128e3
   };
+  var MODEL_CONTEXT_WINDOWS = {
+    "gpt-5.5": 1e6,
+    "gpt-5.4": 1e6,
+    "gpt-5.4-mini": 128e3,
+    "gpt-5.4-nano": 128e3,
+    "gpt-4o": 128e3,
+    "gpt-4o-mini": 128e3,
+    "gpt-4.1": 1e6,
+    "gpt-4.1-mini": 1e6,
+    "gpt-4.1-nano": 1e6,
+    o3: 2e5,
+    "o3-mini": 2e5,
+    "o4-mini": 2e5,
+    "claude-opus-4.7": 1e6,
+    "claude-opus-4.1": 2e5,
+    "claude-opus-3": 2e5,
+    "claude-sonnet-4.6": 1e6,
+    "claude-sonnet": 2e5,
+    "claude-haiku-4.5": 2e5,
+    "claude-haiku-3.5": 2e5,
+    "gemini-pro": 1e6,
+    "gemini-2.5-flash": 1e6,
+    "gemini-2.5-flash-lite": 1e6,
+    "gemini-2.0-flash": 1e6,
+    "gemini-2.0-flash-lite": 1e6,
+    "sonar-pro": 2e5,
+    "grok-3": 128e3,
+    "grok-3-mini": 131072
+  };
+  function normalizeModelKey(value) {
+    return String(value ?? "").toLowerCase().replace(/\bmodel\b/g, "").replace(/\bnew\b/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+  var MODEL_CONTEXT_LOOKUP = Object.fromEntries(Object.keys(MODEL_CONTEXT_WINDOWS).map((id) => [normalizeModelKey(id), id]));
+  var MODEL_CONTEXT_MATCHERS = [
+    [/^gpt-5-5/, "gpt-5.5"],
+    [/^gpt-5-4-mini/, "gpt-5.4-mini"],
+    [/^gpt-5-4-nano/, "gpt-5.4-nano"],
+    [/^gpt-5-4/, "gpt-5.4"],
+    [/^gpt-4o-mini|^gpt-4-o-mini/, "gpt-4o-mini"],
+    [/^gpt-4o|^gpt-4-o/, "gpt-4o"],
+    [/^gpt-4-1-mini/, "gpt-4.1-mini"],
+    [/^gpt-4-1-nano/, "gpt-4.1-nano"],
+    [/^gpt-4-1/, "gpt-4.1"],
+    [/^o4-mini/, "o4-mini"],
+    [/^o3-mini/, "o3-mini"],
+    [/^o3/, "o3"],
+    [/claude.*opus.*4-(7|6|5)|opus.*4-(7|6|5)/, "claude-opus-4.7"],
+    [/claude.*opus.*4-1|opus.*4-1|claude.*opus.*4|opus.*4/, "claude-opus-4.1"],
+    [/claude.*opus.*3|opus.*3/, "claude-opus-3"],
+    [/claude.*sonnet.*4-6|sonnet.*4-6/, "claude-sonnet-4.6"],
+    [/claude.*sonnet|sonnet/, "claude-sonnet"],
+    [/claude.*haiku.*4-5|haiku.*4-5/, "claude-haiku-4.5"],
+    [/claude.*haiku.*3-5|haiku.*3-5/, "claude-haiku-3.5"],
+    [/claude.*haiku|haiku/, "claude-haiku-4.5"],
+    [/gemini.*2-5.*flash-lite|gemini-2-5-flash-lite/, "gemini-2.5-flash-lite"],
+    [/gemini.*2-5.*flash|gemini-2-5-flash/, "gemini-2.5-flash"],
+    [/gemini.*2-0.*flash-lite|gemini-2-0-flash-lite/, "gemini-2.0-flash-lite"],
+    [/gemini.*2-0.*flash|gemini-2-0-flash/, "gemini-2.0-flash"],
+    [/gemini.*pro|gemini-pro/, "gemini-pro"],
+    [/gemini.*flash-lite|flash-lite/, "gemini-2.5-flash-lite"],
+    [/gemini.*flash|flash/, "gemini-2.5-flash"],
+    [/sonar.*pro|perplexity.*pro/, "sonar-pro"],
+    [/grok.*3.*mini|grok-3-mini/, "grok-3-mini"],
+    [/grok.*3|grok-3/, "grok-3"]
+  ];
+  function resolveModelContextWindow(model, site = "generic") {
+    const key = normalizeModelKey(model);
+    const exactId = MODEL_CONTEXT_LOOKUP[key];
+    if (exactId) return MODEL_CONTEXT_WINDOWS[exactId];
+    for (const [pattern, id] of MODEL_CONTEXT_MATCHERS) {
+      if (pattern.test(key)) return MODEL_CONTEXT_WINDOWS[id];
+    }
+    return DEFAULT_CONTEXT_WINDOWS[site] ?? DEFAULT_CONTEXT_WINDOWS.generic;
+  }
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -1482,7 +1556,7 @@ button:focus-visible {
       const quotaPrimary = state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.remainingTokens)} left` : percent !== void 0 ? formatPercent(percent) : `${formatTokens(state.quota.usedTokens)} used`;
       const quotaNote = state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.usedTokens)} used this window` : percent !== void 0 ? `${formatTokens(state.quota.usedTokens)} used this window` : "Set a token budget in settings";
       const quotaBarPercent = percent ?? (state.sitePreferences?.tokenBudget ? clamp(state.quota.usedTokens / Math.max(1, state.sitePreferences.tokenBudget) * 100, 0, 100) : 0);
-      const contextWindow = state.contextWindow ?? DEFAULT_CONTEXT_WINDOWS[state.site] ?? DEFAULT_CONTEXT_WINDOWS.generic;
+      const contextWindow = state.contextWindow ?? resolveModelContextWindow(state.model, state.site);
       const contextPercent = contextWindow ? clamp(state.conversation.totalTokens / Math.max(1, contextWindow) * 100, 0, 100) : void 0;
       const lastEvent = state.lastEvent;
       const recentLabel = lastEvent ? `${formatTokens(lastEvent.promptTokens)} in / ${formatTokens(lastEvent.outputTokens)} out` : "No captured exchanges";
@@ -1614,7 +1688,7 @@ button:focus-visible {
         summary: snapshot?.summary,
         lastEvent,
         sitePreferences: sitePreferencesForSession,
-        contextWindow: sitePreferencesForSession?.contextWindow ?? DEFAULT_CONTEXT_WINDOWS[adapter.site] ?? DEFAULT_CONTEXT_WINDOWS.generic,
+        contextWindow: sitePreferencesForSession?.contextWindow ?? resolveModelContextWindow(session.model, adapter.site),
         privacyLabel: preferences.privacyMode === "local-only" ? "Local" : "Synced prefs"
       };
       overlay.render(latestOverlayState);
