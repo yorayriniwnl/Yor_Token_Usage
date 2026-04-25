@@ -52,6 +52,7 @@ Authentication:
 - Every user endpoint requires a Bearer JWT.
 - JWT must validate against configured `AUTH_ISSUER`, `AUTH_AUDIENCE`, and `AUTH_JWKS_URL`.
 - Users are mapped by immutable auth subject, not email.
+- Auth subject to user ID mapping is cached in Redis; DB `last_seen_at` and email refreshes are throttled instead of written on every request.
 
 Authorization:
 
@@ -329,6 +330,7 @@ Response:
 - Usage writes are batched.
 - Quota aggregation is done in the worker.
 - Rate limits use Redis counters, not Postgres.
+- Auth user lookup uses Redis caching with periodic DB refreshes.
 - API request logging is fire-and-forget.
 - Settings reads are one-row lookups.
 - Avoid hot rows by using `(user, provider, model, windowStart)` quota windows. At larger scale, bucket quota windows by hour and aggregate for display.
