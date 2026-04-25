@@ -244,6 +244,9 @@ Response:
   "tokenCap": 100000,
   "remainingTokens": 99000,
   "limited": false,
+  "periodStart": "2026-04-01T00:00:00.000Z",
+  "periodEnd": "2026-05-01T00:00:00.000Z",
+  "periodSource": "calendar_month",
   "windows": []
 }
 ```
