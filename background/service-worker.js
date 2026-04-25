@@ -530,8 +530,8 @@ function buildAnalytics(events, preferences, now = Date.now()) {
   const bySite = aggregateBy(sorted, (event) => event.site, preferences, (key) => SITE_LABELS[key] ?? key);
   const peakDay = [...byDay].sort((a, b) => b.tokens - a.tokens)[0];
   const averagePromptTokens = average(sorted.map((event) => event.promptTokens));
-  const lastSevenDays = byDay.slice(-7);
-  const burnRate = average(lastSevenDays.map((day) => day.tokens));
+  const activeDays = byDay.slice(-7).filter((day) => day.prompts > 0 || day.tokens > 0);
+  const burnRate = average(activeDays.map((day) => day.tokens));
   const anomalies = detectTokenAnomalies(sorted, preferences);
   return {
     byDay,
