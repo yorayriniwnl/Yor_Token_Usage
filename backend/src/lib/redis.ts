@@ -1,7 +1,11 @@
-import { Redis } from "ioredis";
+import { Redis, type RedisOptions } from "ioredis";
 import { env } from "../config/env.js";
 
-export const redis = new Redis(env.REDIS_URL, {
+export function createRedisClient(options: RedisOptions): Redis {
+  return new Redis(env.REDIS_URL, options);
+}
+
+export const redis = createRedisClient({
   maxRetriesPerRequest: 2,
   enableReadyCheck: true,
   lazyConnect: true,

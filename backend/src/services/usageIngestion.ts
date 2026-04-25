@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
-import type { UsageBatchJob } from "../jobs/usageQueue.js";
+import { usageBatchJobSchema } from "../schemas/usage.js";
 
 type InsertedUsageRow = {
   provider: string;
@@ -18,10 +18,11 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
-export async function processUsageBatch(prisma: PrismaClient, job: UsageBatchJob): Promise<{ accepted: number }> {
-  const rows = job.events.map((event) => ({
-    userId: job.userId,
-    deviceId: job.deviceId,
+export async function processUsageBatch(prisma: PrismaClient, job: unknown): Promise<{ accepted: number }> {
+  const payload = usageBatchJobSchema.parse(job);
+  const rows = payload.events.map((event) => ({
+    userId: payload.userId,
+    deviceId: payload.deviceId,
     clientEventId: event.clientEventId,
     provider: event.provider,
     model: event.model,
@@ -96,14 +97,14 @@ export async function processUsageBatch(prisma: PrismaClient, job: UsageBatchJob
       await tx.quotaWindow.upsert({
         where: {
           userId_provider_model_windowStart: {
-            userId: job.userId,
+            userId: payload.userId,
             provider: group.provider,
             model: group.model,
             windowStart: group.windowStart
           }
         },
         create: {
-          userId: job.userId,
+          userId: payload.userId,
           provider: group.provider,
           model: group.model,
           windowStart: group.windowStart,

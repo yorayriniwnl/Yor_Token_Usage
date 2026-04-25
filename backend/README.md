@@ -336,6 +336,7 @@ Response:
 - Usage ingestion is async through Redis Streams.
 - Usage events are deduped by `(userId, clientEventId)`.
 - Batch requests support `Idempotency-Key`; expired idempotency rows are swept by a Redis-locked cleanup job.
+- Queued usage jobs are schema-validated again before database ingestion.
 - Worker retries 5 times with exponential backoff.
 - API uses bounded body sizes and request validation.
 - Extension should buffer usage events locally and retry with exponential backoff.
@@ -346,6 +347,7 @@ Response:
 
 - Usage writes are batched.
 - Quota aggregation is done in the worker.
+- Users without an active subscription use the configured `FREE` plan for quota caps.
 - Rate limits use Redis counters, not Postgres.
 - Auth user lookup uses Redis caching with periodic DB refreshes.
 - API request logging is fire-and-forget.
@@ -408,6 +410,7 @@ backend/
 - Create production Postgres with private networking.
 - Create Redis with persistence suitable for queues.
 - Configure auth provider and JWT audience.
+- Seed billing plans, including a `FREE` plan for users without an active subscription.
 - Set `ALLOWED_EXTENSION_ORIGINS` to the production extension ID only.
 - Set all secrets in cloud secret manager, not `.env` files.
 - Run `npm ci`.

@@ -1,6 +1,6 @@
-import { Redis } from "ioredis";
-import { env } from "../config/env.js";
 import { prisma } from "../lib/prisma.js";
+import { createRedisClient } from "../lib/redis.js";
+import { usageBatchJobSchema } from "../schemas/usage.js";
 import { processUsageBatch } from "../services/usageIngestion.js";
 import type { UsageBatchJob } from "./usageQueue.js";
 
@@ -12,13 +12,15 @@ const READ_COUNT = 10;
 const BLOCK_MS = 5_000;
 const STALE_PENDING_IDLE_MS = 60_000;
 const MAX_RECLAIM_BATCHES = 5;
+const MAX_GROUP_PENDING_MESSAGES = 1_000;
 
 type RedisStreamMessage = [string, string[]];
 type RedisStreamReadResult = Array<[string, RedisStreamMessage[]]> | null;
 type RedisAutoClaimResult = [string, RedisStreamMessage[], string[]?];
 type RedisPendingDetail = [string, string, number | string, number | string];
+type RedisPendingSummary = [number | string, string | null, string | null, Array<[string, string]>];
 
-const redis = new Redis(env.REDIS_URL, {
+const redis = createRedisClient({
   maxRetriesPerRequest: null,
   enableReadyCheck: true
 });
@@ -29,6 +31,10 @@ async function ensureGroup(): Promise<void> {
   } catch (error) {
     if (!String(error).includes("BUSYGROUP")) throw error;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fieldsToObject(fields: string[]): Record<string, string> {
@@ -65,12 +71,17 @@ async function getDeliveryCount(id: string): Promise<number | undefined> {
   return deliveryCount === undefined ? undefined : Number(deliveryCount);
 }
 
+async function getGroupPendingCount(): Promise<number> {
+  const pending = await redis.xpending(STREAM, GROUP) as RedisPendingSummary;
+  return Number(pending[0] ?? 0);
+}
+
 async function handleMessage(id: string, fields: string[], deliveryCount?: number): Promise<void> {
   let payload: UsageBatchJob;
   try {
-    payload = JSON.parse(fieldsToObject(fields).payload ?? "{}") as UsageBatchJob;
+    payload = usageBatchJobSchema.parse(JSON.parse(fieldsToObject(fields).payload ?? "{}"));
   } catch (error) {
-    console.error({ id, error }, "usage ingestion payload was invalid JSON");
+    console.error({ id, error }, "usage ingestion payload was invalid");
     await deadLetterRaw(id, fields, error);
     return;
   }
@@ -119,6 +130,12 @@ async function loop(): Promise<void> {
 
   for (;;) {
     await reclaimStalePending(consumer);
+    const pendingCount = await getGroupPendingCount();
+    if (pendingCount >= MAX_GROUP_PENDING_MESSAGES) {
+      console.warn({ pendingCount }, "usage worker pausing fresh reads while pending messages drain");
+      await sleep(BLOCK_MS);
+      continue;
+    }
 
     const result = await redis.xreadgroup(
       "GROUP",

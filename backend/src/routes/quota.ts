@@ -51,7 +51,7 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
         rateLimit({ scope: "quota-check", limit: 180, windowSeconds: 60, key: (request) => request.auth?.userId })
       ]
     },
-    async (request) => {
+    async (request, reply) => {
       const query = quotaQuerySchema.parse(request.query);
       const now = new Date();
 
@@ -60,6 +60,18 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
         include: { plan: true },
         orderBy: { createdAt: "desc" }
       });
+      const plan = subscription?.plan ?? await app.prisma.plan.findFirst({
+        where: { tier: "FREE" },
+        orderBy: { createdAt: "asc" }
+      });
+
+      if (!plan) {
+        reply.code(503);
+        return {
+          error: "plan_unavailable",
+          message: "No active subscription or FREE plan is configured for quota checks"
+        };
+      }
 
       const period = resolveQuotaPeriod(subscription, now);
       const quotaWhere: Prisma.QuotaWindowWhereInput = {
@@ -83,7 +95,7 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       ]);
 
       const usedTokens = usage._sum.usedTokens ?? 0;
-      const tokenCap = subscription?.plan.monthlyTokenCap ?? 100_000;
+      const tokenCap = plan.monthlyTokenCap;
 
       return {
         usedTokens,
