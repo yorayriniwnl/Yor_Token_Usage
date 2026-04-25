@@ -3,19 +3,25 @@ import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { upsertDevice } from "../services/devices.js";
 
+const authSessionIpLimiter = rateLimit({
+  scope: "auth-session-ip",
+  limit: 60,
+  windowSeconds: 60,
+  key: (request) => request.ip
+});
+
+const authSessionUserLimiter = rateLimit({
+  scope: "auth-session-user",
+  limit: 30,
+  windowSeconds: 60,
+  key: (request) => request.auth?.userId
+});
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     "/v1/auth/session",
     {
-      preHandler: [
-        rateLimit({
-          scope: "auth-session",
-          limit: 30,
-          windowSeconds: 60,
-          key: (request) => request.headers.authorization
-        }),
-        requireAuth
-      ]
+      preHandler: [authSessionIpLimiter, requireAuth, authSessionUserLimiter]
     },
     async (request) => {
       const device = await upsertDevice(request);
