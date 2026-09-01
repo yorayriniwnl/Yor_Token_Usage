@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Yor Token Usage",
-  "description": "A premium AI usage cockpit for ChatGPT, Claude, Gemini, Perplexity, and Grok.",
+  "name": "YOR // Token Usage",
+  "description": "Local-first AI usage signal for ChatGPT, Claude, Gemini, Perplexity, and Grok.",
   "version": "1.0.0",
   "minimum_chrome_version": "120",
   "icons": {
@@ -11,7 +11,7 @@
     "128": "assets/icons/icon-128.png"
   },
   "action": {
-    "default_title": "Yor Token Usage",
+    "default_title": "YOR // Token Usage",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "assets/icons/icon-16.png",

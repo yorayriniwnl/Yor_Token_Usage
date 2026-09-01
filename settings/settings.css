@@ -321,6 +321,127 @@ select:focus-visible {
   }
 }
 
+/* YOR // Visual Framework Lock */
+:root {
+  --yor-void: #000000;
+  --yor-graphite: #050505;
+  --yor-crimson: #e84b4b;
+  --yor-deep-crimson: #671515;
+  --yor-signal: #ff8a7f;
+  --yor-warm-white: #f5eaea;
+  --yor-muted: #c4c4c4;
+  --yor-field: linear-gradient(135deg, #671515, #8c1616, #2a0505);
+  --bg: var(--yor-void);
+  --surface: var(--yor-graphite);
+  --surface-2: #0d0d0d;
+  --surface-3: #1a0505;
+  --text: var(--yor-warm-white);
+  --muted: var(--yor-muted);
+  --subtle: #907c7c;
+  --line: rgba(245, 234, 234, 0.16);
+  --line-strong: rgba(255, 138, 127, 0.42);
+  --primary: var(--yor-crimson);
+  --primary-ink: var(--yor-void);
+}
+
+html,
+body {
+  background-color: var(--yor-void);
+  color: var(--yor-warm-white);
+}
+
+body {
+  background-image:
+    linear-gradient(rgba(232, 75, 75, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232, 75, 75, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.app-shell {
+  max-width: 1180px;
+}
+
+.hero,
+.panel,
+.field,
+.site-card {
+  border-radius: 0;
+  border-color: rgba(245, 234, 234, 0.18);
+  background: linear-gradient(145deg, rgba(5, 5, 5, 0.98), rgba(42, 5, 5, 0.72));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+}
+
+.hero {
+  background: linear-gradient(135deg, rgba(103, 21, 21, 0.72), rgba(5, 5, 5, 0.96));
+}
+
+.hero h1,
+.section-head h2,
+.site-card h3,
+.field span {
+  color: var(--yor-warm-white);
+}
+
+.eyebrow,
+.hero p,
+.section-head,
+.site-card p {
+  color: var(--yor-muted);
+}
+
+.primary-btn,
+.ghost-btn {
+  border-radius: 0;
+}
+
+.primary-btn {
+  border: 1px solid var(--yor-crimson);
+  background: var(--yor-crimson);
+  color: var(--yor-void);
+}
+
+.primary-btn:hover {
+  background: var(--yor-signal);
+}
+
+.ghost-btn {
+  border-color: rgba(255, 138, 127, 0.34);
+  background: transparent;
+  color: var(--yor-signal);
+}
+
+.ghost-btn:hover {
+  border-color: var(--yor-signal);
+  background: rgba(103, 21, 21, 0.42);
+}
+
+.field input,
+.field select {
+  border-radius: 0;
+  border-color: rgba(245, 234, 234, 0.24);
+  background: var(--yor-graphite);
+  color: var(--yor-warm-white);
+}
+
+.field input:focus,
+.field select:focus,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  border-color: var(--yor-signal);
+  outline-color: var(--yor-signal);
+  box-shadow: 0 0 0 3px rgba(232, 75, 75, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
 @media (max-width: 900px) {
   .app-shell { width: min(100vw - 24px, 720px); padding-top: 16px; }
   .hero { align-items: flex-start; flex-direction: column; }

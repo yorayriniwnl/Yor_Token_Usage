@@ -1,0 +1,7 @@
+{
+  "name": "yor-token-usage-extension",
+  "private": true,
+  "scripts": {
+    "design:check": "node scripts/check-design.mjs"
+  }
+}
