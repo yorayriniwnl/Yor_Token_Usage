@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { canonicalizeExtensionOrigin } from "./origins.js";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -82,5 +83,5 @@ export const env = envSchema.parse(process.env);
 
 export const allowedExtensionOrigins = env.ALLOWED_EXTENSION_ORIGINS
   .split(",")
-  .map((origin) => origin.trim())
+  .map(canonicalizeExtensionOrigin)
   .filter(Boolean);
