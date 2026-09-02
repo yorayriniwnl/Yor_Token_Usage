@@ -11,7 +11,8 @@
     return Math.round(value * precision) / precision;
   }
   function uid(prefix = "yor") {
-    return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+    const randomPart = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10);
+    return `${prefix}_${randomPart}_${Date.now().toString(36)}`;
   }
   function debounce(fn, delay = 200) {
     let timeout = 0;
@@ -457,6 +458,8 @@
     return preview ? `${type}: ${preview}` : type;
   }
   function estimateSectionTokens(text, type) {
+    const sharedEstimator = globalThis.YorTokenAccuracy?.estimateSectionTokens;
+    if (typeof sharedEstimator === "function") return sharedEstimator(text, type);
     const chars = text.length;
     const lines = Math.max(1, text.split("\n").length);
     const punctuation = (text.match(/[,:;()[\]{}]/g) ?? []).length;
@@ -465,7 +468,7 @@
     const nonAscii = (text.match(/[^\u0000-\u007f]/g) ?? []).length;
     switch (type) {
       case "code":
-        return Math.ceil(chars / 2.7 + lines * 0.45 + punctuation * 0.05 + longWords * 0.1);
+        return Math.ceil(chars / 3.5 + lines * 0.3 + punctuation * 0.04 + longWords * 0.06);
       case "url":
         return Math.ceil(chars / 6.5 + urls * 6);
       case "instruction":
@@ -575,6 +578,8 @@
     return Math.max(40, Math.round(inputTokens * ratio + questionCount * 6 + 24));
   }
   function estimateTokenBreakdown(text, attachments = []) {
+    const sharedEstimator = globalThis.YorTokenAccuracy?.estimateTokenBreakdown;
+    if (typeof sharedEstimator === "function") return sharedEstimator(text, attachments);
     const sections = [...segmentText(text), ...describeAttachments(attachments)];
     const textTokens = sum(sections.filter((section) => ["prose", "instruction", "quote"].includes(section.type)).map((section) => section.tokens));
     const codeTokens = sum(sections.filter((section) => section.type === "code").map((section) => section.tokens));
@@ -818,7 +823,23 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
       maxDetail: buildVariant(text, "maxDetail")
     };
   }
-  function analyzePrompt(text) {
+  function createMeasurement(options = {}) {
+    const sharedMeasurement = globalThis.YorTokenAccuracy?.createMeasurement;
+    if (typeof sharedMeasurement === "function") return sharedMeasurement(options);
+    return {
+      schemaVersion: 1,
+      measurementMethod: "dom-text-heuristic",
+      measurementLevel: "approximation",
+      confidence: 0.5,
+      errorMarginPercent: 40,
+      provider: String(options.provider ?? "generic").slice(0, 64),
+      model: String(options.model ?? "unknown").slice(0, 120),
+      tokenizer: "none",
+      source: String(options.source ?? "visible provider DOM text").slice(0, 160),
+      note: "Visible text only; ±40% is calibrated against an OpenAI BPE reference, not provider billing."
+    };
+  }
+  function analyzePrompt(text, measurementOptions = {}) {
     const breakdown = estimateTokenBreakdown(text);
     const repeatedInstructions = findRepeatedInstructions(text);
     const redundantSections = findRedundantSections(text);
@@ -836,7 +857,8 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
       repeatedInstructions,
       redundantSections,
       largePaste: breakdown.total >= 1600 || text.length > 6500,
-      compressionScore: clamp(Math.round(bestSavings / Math.max(1, breakdown.total) * 100), 0, 100)
+      compressionScore: clamp(Math.round(bestSavings / Math.max(1, breakdown.total) * 100), 0, 100),
+      measurement: createMeasurement(measurementOptions)
     };
   }
 
@@ -1467,6 +1489,16 @@ button:focus-visible {
               <ul class="yor-list" data-ref="sectionsList"></ul>
             </div>
             <div class="yor-section">
+              <div class="yor-section-head"><strong>Measurement basis</strong><span data-ref="measurementLabel"></span></div>
+              <div class="yor-rows">
+                <div class="yor-row">
+                  <span class="yor-row-label">Confidence</span>
+                  <span class="yor-row-main"><strong data-ref="measurementConfidence"></strong><span data-ref="measurementSource"></span></span>
+                  <span class="yor-row-value" data-ref="measurementMargin"></span>
+                </div>
+              </div>
+            </div>
+            <div class="yor-section">
               <div class="yor-section-head"><strong>Totals</strong><span data-ref="privacyLabel"></span></div>
               <div class="yor-rows">
                 <div class="yor-row">
@@ -1578,8 +1610,12 @@ button:focus-visible {
       const resetMs = state.quota.nextReset?.remainingMs;
       const suggestions = (state.analysis.suggestions ?? []).slice(0, 3);
       const sections = (state.analysis.sections ?? []).slice(0, 5);
+      const measurement = state.analysis?.measurement ?? {};
+      const measurementLevel = measurement.measurementLevel === "approximation" ? "Approximate" : measurement.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
+      const measurementConfidence = Number.isFinite(measurement.confidence) ? `${Math.round(measurement.confidence * 100)}%` : "Unknown";
+      const measurementMargin = Number.isFinite(measurement.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}%` : "No bound";
       const hasDraft = Boolean(state.currentInput?.trim()) || state.analysis.inputTokens > 0;
-      const statusText = state.quota.status === "limited" ? "Limited" : state.quota.status === "warning" ? "Near limit" : percent === void 0 && state.quota.remainingTokens === void 0 ? "Budget not set" : state.quota.accuracy === "exact" ? "Live" : "Estimated";
+      const statusText = state.quota.status === "limited" ? "Limited" : state.quota.status === "warning" ? "Near limit" : percent === void 0 && state.quota.remainingTokens === void 0 ? "Budget not set" : state.quota.accuracy === "exact" ? "Provider signal" : "Estimated";
       const quotaPrimary = state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.remainingTokens)} left` : percent !== void 0 ? formatPercent(percent) : `${formatTokens(state.quota.usedTokens)} used`;
       const quotaNote = state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.usedTokens)} used this window` : percent !== void 0 ? `${formatTokens(state.quota.usedTokens)} used this window` : "Set a token budget in settings";
       const quotaBarPercent = percent ?? (state.sitePreferences?.tokenBudget ? clamp(state.quota.usedTokens / Math.max(1, state.sitePreferences.tokenBudget) * 100, 0, 100) : 0);
@@ -1628,6 +1664,10 @@ button:focus-visible {
       this.setText("capturedStatus", lastEvent ? formatShortTime(lastEvent.timestamp) : "Not yet");
       this.setText("capturedText", recentLabel);
       this.setText("capturedTokens", lastEvent ? formatTokens(lastEvent.totalTokens) : "\u2014");
+      this.setText("measurementLabel", measurementLevel);
+      this.setText("measurementConfidence", measurementConfidence);
+      this.setText("measurementSource", measurement.source ?? "Source metadata unavailable");
+      this.setText("measurementMargin", measurementMargin);
       this.setText("sectionsSummary", hasDraft ? `${sections.length} sections` : "No draft");
       this.renderList("sectionsList", hasDraft && sections.length ? sections.map((section) => this.listItem(
         this.strong(section.type),
@@ -1723,10 +1763,15 @@ button:focus-visible {
     const syncSession = async () => {
       const model = adapter.getModelName() ?? stateCache?.sessions[adapter.site]?.model ?? "generic";
       const input = adapter.readComposerText();
-      const analysis = analyzePrompt(input);
+      const hints = adapter.getQuotaHints();
+      const analysis = analyzePrompt(input, {
+        provider: adapter.site,
+        model,
+        adapterConfidence: hints.confidence ?? 0.5,
+        source: "visible provider composer DOM text"
+      });
       const messages = adapter.collectMessages();
       const conversation = estimateConversation(messages);
-      const hints = adapter.getQuotaHints();
       const sitePreferences = preferences.sites[adapter.site] ?? DEFAULT_PREFERENCES.sites[adapter.site];
       if (!sitePreferences?.enabled) {
         overlay.setVisible(false);
@@ -1820,13 +1865,20 @@ button:focus-visible {
       const fingerprint = `${prompt}:${adapter.getThreadId()}`;
       if (fingerprint === lastPromptFingerprint) return;
       lastPromptFingerprint = fingerprint;
-      const analysis = analyzePrompt(prompt);
+      const model = adapter.getModelName() ?? "generic";
+      const hints = adapter.getQuotaHints();
+      const analysis = analyzePrompt(prompt, {
+        provider: adapter.site,
+        model,
+        adapterConfidence: hints.confidence ?? 0.5,
+        source: "visible provider composer DOM text"
+      });
       const messages = adapter.collectMessages();
       pendingPrompt = {
         id: uid("usage"),
         prompt,
         analysis,
-        model: adapter.getModelName() ?? "generic",
+        model,
         threadId: adapter.getThreadId(),
         assistantCount: messages.filter((message) => message.role === "assistant").length,
         startedAt: Date.now()
@@ -1834,6 +1886,11 @@ button:focus-visible {
     };
     const finalizePendingPrompt = debounce(async () => {
       if (!pendingPrompt) return;
+      if (Date.now() - pendingPrompt.startedAt > 10 * 60_000) {
+        pendingPrompt = void 0;
+        lastPromptFingerprint = "";
+        return;
+      }
       const messages = adapter.collectMessages();
       const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text.length > 8);
       const hints = adapter.getQuotaHints();
@@ -1850,7 +1907,13 @@ button:focus-visible {
           promptChars: pendingPrompt.prompt.length,
           outputChars: 0,
           status: "rate_limited",
-          accuracy: hints.resetAt ? "exact" : "inferred",
+          accuracy: "estimated",
+          measurement: createMeasurement({
+            provider: adapter.site,
+            model: pendingPrompt.model,
+            adapterConfidence: hints.confidence ?? 0.5,
+            source: "visible provider composer DOM text; quota status signaled by provider UI"
+          }),
           promptPreview: truncate(pendingPrompt.prompt, 140),
           optimizerSavings: Math.round(pendingPrompt.analysis.compressionScore / 100 * pendingPrompt.analysis.inputTokens),
           rateLimitMessage: hints.rateLimitMessage,
@@ -1863,12 +1926,18 @@ button:focus-visible {
           preferences = response.snapshot.state.preferences ?? preferences;
         }
         pendingPrompt = void 0;
+        lastPromptFingerprint = "";
         return;
       }
       if (!latestAssistant) return;
       const afterAssistantCount = messages.filter((message) => message.role === "assistant").length;
       if (afterAssistantCount <= pendingPrompt.assistantCount) return;
-      const assistantAnalysis = analyzePrompt(latestAssistant.text);
+      const assistantAnalysis = analyzePrompt(latestAssistant.text, {
+        provider: adapter.site,
+        model: pendingPrompt.model,
+        adapterConfidence: hints.confidence ?? 0.5,
+        source: "visible provider response DOM text"
+      });
       const event = {
         id: pendingPrompt.id,
         site: adapter.site,
@@ -1881,7 +1950,13 @@ button:focus-visible {
         promptChars: pendingPrompt.prompt.length,
         outputChars: latestAssistant.text.length,
         status: "completed",
-        accuracy: hints.resetAt ? "exact" : "estimated",
+        accuracy: "estimated",
+        measurement: createMeasurement({
+          provider: adapter.site,
+          model: pendingPrompt.model,
+          adapterConfidence: hints.confidence ?? 0.5,
+          source: "visible provider composer and response DOM text"
+        }),
         promptPreview: truncate(pendingPrompt.prompt, 140),
         optimizerSavings: Math.round(pendingPrompt.analysis.compressionScore / 100 * pendingPrompt.analysis.inputTokens),
         rateLimitMessage: hints.rateLimitMessage,
@@ -1894,6 +1969,7 @@ button:focus-visible {
         preferences = response.snapshot.state.preferences ?? preferences;
       }
       pendingPrompt = void 0;
+      lastPromptFingerprint = "";
       await syncSession();
     }, 1600);
     let boundComposer;

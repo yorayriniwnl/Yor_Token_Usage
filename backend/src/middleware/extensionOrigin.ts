@@ -2,7 +2,8 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { allowedExtensionOrigins } from "../config/env.js";
 
 export async function validateBrowserOrigin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  if (request.url === "/healthz" || request.url === "/readyz" || request.url === "/metrics") return;
+  const path = request.url.split("?", 1)[0] ?? request.url;
+  if (path === "/healthz" || path === "/readyz" || path === "/metrics") return;
 
   const origin = request.headers.origin;
   if (origin === undefined) {
@@ -18,5 +19,6 @@ export async function validateBrowserOrigin(request: FastifyRequest, reply: Fast
   if (!allowedExtensionOrigins.includes(origin)) {
     request.log.warn({ origin }, "blocked browser origin");
     reply.code(403).send({ error: "forbidden", message: "Untrusted browser origin" });
+    return;
   }
 }

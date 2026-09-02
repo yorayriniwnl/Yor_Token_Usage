@@ -225,6 +225,11 @@ var recentThreads = document.querySelector("#recent-threads");
 var timeline = document.querySelector("#timeline");
 var anomalies = document.querySelector("#anomalies");
 var changeCard = document.querySelector("#change-card");
+function applyPresentation(preferences) {
+  const theme = preferences.theme === "system" ? (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark") : preferences.theme;
+  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+  document.documentElement.classList.toggle("compact", preferences.compactMode === true);
+}
 async function runButtonAction(button, task, doneLabel = "Done") {
   const originalLabel = button.textContent;
   button.classList.add("is-busy");
@@ -254,6 +259,13 @@ function renderLoading() {
   anomalies.innerHTML = '<div class="skeleton-chart short"></div>';
   changeCard.innerHTML = '<div class="skeleton-chart short"></div>';
 }
+function describeRuntimeError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/chrome|sendMessage|extension context|cannot read properties of undefined|is not a function/i.test(message)) {
+    return "The extension background service is unavailable. Reload Yor and reopen this dashboard.";
+  }
+  return message.slice(0, 240) || "The extension could not load this dashboard.";
+}
 function renderError(message) {
   metrics.innerHTML = '<article class="metric-card"><span>Status</span><strong>Offline</strong></article>';
   dailyChart.innerHTML = `<div class="empty-chart">${escapeHtml(message)}</div>`;
@@ -272,7 +284,7 @@ function download(filename, content, type) {
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function renderMetrics(snapshot) {
   const peakDay = snapshot.analytics.peakDay;
@@ -305,6 +317,10 @@ function renderChangeSummary(snapshot) {
   }
   const delta = previous ? latest.totalTokens - previous.totalTokens : latest.totalTokens;
   const direction = delta >= 0 ? "more" : "fewer";
+  const measurement = latest.measurement ?? {};
+  const measurementLabel = measurement.measurementLevel === "approximation" ? "Approximate" : measurement.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
+  const measurementConfidence = Number.isFinite(measurement.confidence) ? `${Math.round(measurement.confidence * 100)}%` : "unknown";
+  const measurementMargin = Number.isFinite(measurement.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}%` : "unbounded";
   changeCard.innerHTML = `
     <div class="copy-card">
       <strong>${escapeHtml(`${SITE_LABELS[latest.site] ?? latest.site} \u2022 ${latest.model}`)}</strong>
@@ -318,6 +334,10 @@ function renderChangeSummary(snapshot) {
       <strong>Optimization signal</strong>
       <p>${escapeHtml(snapshot.currentSession?.currentEstimate.suggestions[0]?.description ?? "Prompts look healthy. Keep an eye on long pasted context and code blocks.")}</p>
     </div>
+    <div class="copy-card">
+      <strong>Measurement basis</strong>
+      <p>${escapeHtml(`${measurementLabel} • ${measurementConfidence} confidence • ${measurementMargin} error bound. ${measurement.source ?? "Source metadata unavailable"}.`)}</p>
+    </div>
   `;
 }
 async function render() {
@@ -325,13 +345,14 @@ async function render() {
   try {
     snapshot = await sendRuntimeMessage({ type: "get-snapshot" });
   } catch (error) {
-    renderError(error instanceof Error ? error.message : String(error));
+    renderError(describeRuntimeError(error));
     return;
   }
   if (!snapshot?.analytics || !snapshot?.summary) {
     renderError("Snapshot data was missing or incomplete.");
     return;
   }
+  applyPresentation(snapshot.state?.preferences ?? DEFAULT_PREFERENCES);
   renderMetrics(snapshot);
   renderSparkline(
     dailyChart,

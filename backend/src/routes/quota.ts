@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { modelSchema, providerSchema } from "../schemas/common.js";
+import { resolveEntitlement } from "../services/plans.js";
 import { resolveQuotaPeriod } from "../services/quotaPolicy.js";
 
 const quotaQuerySchema = z.object({
@@ -24,15 +25,7 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       const query = quotaQuerySchema.parse(request.query);
       const now = new Date();
 
-      const subscription = await app.prisma.subscription.findFirst({
-        where: { userId: request.auth!.userId, status: { in: ["TRIALING", "ACTIVE", "PAST_DUE"] } },
-        include: { plan: true },
-        orderBy: { createdAt: "desc" }
-      });
-      const plan = subscription?.plan ?? await app.prisma.plan.findFirst({
-        where: { tier: "FREE" },
-        orderBy: { createdAt: "asc" }
-      });
+      const { plan, subscription } = await resolveEntitlement(app.prisma, request.auth!.userId);
 
       if (!plan) {
         reply.code(503);
@@ -43,6 +36,12 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const period = resolveQuotaPeriod(subscription, now);
+      const usageWhere: Prisma.UsageEventWhereInput = {
+        userId: request.auth!.userId,
+        occurredAt: { gte: period.start, lt: period.end },
+        ...(query.provider ? { provider: query.provider } : {}),
+        ...(query.model ? { model: query.model } : {})
+      };
       const quotaWhere: Prisma.QuotaWindowWhereInput = {
         userId: request.auth!.userId,
         windowStart: { lt: period.end },
@@ -52,25 +51,36 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       };
 
       const [usage, windows] = await Promise.all([
-        app.prisma.quotaWindow.aggregate({
-          where: quotaWhere,
-          _sum: { usedTokens: true }
+        app.prisma.usageEvent.aggregate({
+          where: usageWhere,
+          _sum: { totalTokens: true }
         }),
         app.prisma.quotaWindow.findMany({
           where: quotaWhere,
           orderBy: [{ windowStart: "desc" }, { usedTokens: "desc" }],
-          take: 50
+          take: 50,
+          select: {
+            provider: true,
+            model: true,
+            windowStart: true,
+            windowEnd: true,
+            usedTokens: true,
+            promptCount: true,
+            status: true
+          }
         })
       ]);
 
-      const usedTokens = usage._sum.usedTokens ?? 0;
-      const tokenCap = plan.monthlyTokenCap;
+      const usedTokens = usage._sum.totalTokens ?? 0;
+      const tokenCap = Math.max(0, plan.monthlyTokenCap);
 
       return {
         usedTokens,
         tokenCap,
         remainingTokens: Math.max(0, tokenCap - usedTokens),
         limited: usedTokens >= tokenCap,
+        usageAccuracy: "estimated",
+        usageBasis: "server-recorded event totals; no provider billing counter is connected",
         periodStart: period.start,
         periodEnd: period.end,
         periodSource: period.source,

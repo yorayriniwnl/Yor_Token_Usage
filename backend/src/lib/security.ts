@@ -16,7 +16,8 @@ export function safeEqual(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function clientIp(headers: Record<string, unknown>, fallbackIp?: string): string | undefined {
-  const forwarded = String(headers["x-forwarded-for"] ?? "").split(",")[0]?.trim();
-  return forwarded || fallbackIp;
+export function clientIp(_headers: Record<string, unknown>, fallbackIp?: string): string | undefined {
+  // Fastify's request.ip is only proxy-aware when trustProxy is explicitly enabled.
+  // Never trust a caller-controlled X-Forwarded-For header at this layer.
+  return fallbackIp;
 }

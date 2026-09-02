@@ -27,7 +27,28 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
         where: { userId: request.auth!.userId }
       });
 
-      let usageEvents: Awaited<ReturnType<typeof app.prisma.usageEvent.findMany>> = [];
+      let usageEvents: Array<{
+        id: string;
+        clientEventId: string;
+        provider: string;
+        model: string;
+        threadId: string | null;
+        occurredAt: Date;
+        promptTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+        promptHash: string | null;
+        status: "COMPLETED" | "RATE_LIMITED" | "FAILED";
+        accuracy: "ESTIMATED" | "EXACT" | "INFERRED";
+        schemaVersion: number;
+        measurementMethod: string;
+        measurementLevel: string;
+        confidence: number;
+        errorMarginPercent: number;
+        tokenizer: string;
+        source: string;
+        metadata: unknown;
+      }> = [];
       let hasMore = false;
       let nextCursor: string | null = null;
 
@@ -56,13 +77,39 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
             userId: request.auth!.userId,
             ...(filters.length ? { AND: filters } : {})
           },
+          select: {
+            id: true,
+            clientEventId: true,
+            provider: true,
+            model: true,
+            threadId: true,
+            occurredAt: true,
+            promptTokens: true,
+            outputTokens: true,
+            totalTokens: true,
+            promptHash: true,
+            status: true,
+            accuracy: true,
+            schemaVersion: true,
+            measurementMethod: true,
+            measurementLevel: true,
+            confidence: true,
+            errorMarginPercent: true,
+            tokenizer: true,
+            source: true,
+            metadata: true
+          },
           orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
           take: body.maxEvents + 1
         });
 
         hasMore = rows.length > body.maxEvents;
-        usageEvents = rows.slice(0, body.maxEvents);
-        const lastEvent = usageEvents.at(-1);
+        const selectedRows = rows.slice(0, body.maxEvents);
+        const lastEvent = selectedRows.at(-1);
+        usageEvents = selectedRows.map((row) => ({
+          ...row,
+          measurementLevel: row.measurementLevel.toLowerCase()
+        }));
         nextCursor = hasMore && lastEvent ? encodeUsageCursor(lastEvent) : null;
       }
 

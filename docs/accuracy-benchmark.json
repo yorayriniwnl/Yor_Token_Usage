@@ -1,0 +1,146 @@
+{
+  "benchmarkVersion": 1,
+  "referenceTokenizer": "gpt-tokenizer@4.0.0 / o200k_base",
+  "referenceScope": "OpenAI BPE reference only; this is not provider billing truth or Anthropic/Gemini token ground truth.",
+  "estimator": {
+    "method": "dom-text-heuristic",
+    "level": "approximation",
+    "configuredErrorMarginPercent": 40,
+    "confidenceAtAdapterConfidence50": 0.51
+  },
+  "summary": {
+    "samples": 20,
+    "meanAbsoluteError": 33.45,
+    "meanAbsolutePercentError": 17.973802665075343,
+    "medianAbsolutePercentError": 13.333333333333334,
+    "p95AbsolutePercentError": 37.5,
+    "maxAbsolutePercentError": 37.611607142857146,
+    "meanSignedPercentError": 5.905058465746433,
+    "aggregateEstimate": 3153,
+    "aggregateReference": 2550,
+    "aggregatePercentError": 23.647058823529413
+  },
+  "categories": {
+    "english": {
+      "samples": 2,
+      "meanAbsoluteError": 3.5,
+      "meanAbsolutePercentError": 21.38157894736842,
+      "medianAbsolutePercentError": 5.263157894736842,
+      "p95AbsolutePercentError": 37.5,
+      "maxAbsolutePercentError": 37.5,
+      "meanSignedPercentError": 21.38157894736842,
+      "aggregateEstimate": 42,
+      "aggregateReference": 35,
+      "aggregatePercentError": 20
+    },
+    "hindi": {
+      "samples": 2,
+      "meanAbsoluteError": 2.5,
+      "meanAbsolutePercentError": 10.761904761904763,
+      "medianAbsolutePercentError": 9.523809523809524,
+      "p95AbsolutePercentError": 12,
+      "maxAbsolutePercentError": 12,
+      "meanSignedPercentError": -1.2380952380952381,
+      "aggregateEstimate": 45,
+      "aggregateReference": 46,
+      "aggregatePercentError": 2.1739130434782608
+    },
+    "hinglish": {
+      "samples": 2,
+      "meanAbsoluteError": 3,
+      "meanAbsolutePercentError": 16.99346405228758,
+      "medianAbsolutePercentError": 11.76470588235294,
+      "p95AbsolutePercentError": 22.22222222222222,
+      "maxAbsolutePercentError": 22.22222222222222,
+      "meanSignedPercentError": 16.99346405228758,
+      "aggregateEstimate": 41,
+      "aggregateReference": 35,
+      "aggregatePercentError": 17.142857142857142
+    },
+    "code": {
+      "samples": 2,
+      "meanAbsoluteError": 5.5,
+      "meanAbsolutePercentError": 15.52006552006552,
+      "medianAbsolutePercentError": 12.121212121212121,
+      "p95AbsolutePercentError": 18.91891891891892,
+      "maxAbsolutePercentError": 18.91891891891892,
+      "meanSignedPercentError": 15.52006552006552,
+      "aggregateEstimate": 81,
+      "aggregateReference": 70,
+      "aggregatePercentError": 15.714285714285714
+    },
+    "markdown": {
+      "samples": 2,
+      "meanAbsoluteError": 6,
+      "meanAbsolutePercentError": 20,
+      "medianAbsolutePercentError": 13.333333333333334,
+      "p95AbsolutePercentError": 26.666666666666668,
+      "maxAbsolutePercentError": 26.666666666666668,
+      "meanSignedPercentError": 20,
+      "aggregateEstimate": 72,
+      "aggregateReference": 60,
+      "aggregatePercentError": 20
+    },
+    "json": {
+      "samples": 2,
+      "meanAbsoluteError": 3,
+      "meanAbsolutePercentError": 10.114942528735632,
+      "medianAbsolutePercentError": 6.896551724137931,
+      "p95AbsolutePercentError": 13.333333333333334,
+      "maxAbsolutePercentError": 13.333333333333334,
+      "meanSignedPercentError": -10.114942528735632,
+      "aggregateEstimate": 53,
+      "aggregateReference": 59,
+      "aggregatePercentError": 10.16949152542373
+    },
+    "emoji-unicode": {
+      "samples": 2,
+      "meanAbsoluteError": 3.5,
+      "meanAbsolutePercentError": 12.888198757763973,
+      "medianAbsolutePercentError": 4.3478260869565215,
+      "p95AbsolutePercentError": 21.428571428571427,
+      "maxAbsolutePercentError": 21.428571428571427,
+      "meanSignedPercentError": -8.540372670807454,
+      "aggregateEstimate": 46,
+      "aggregateReference": 51,
+      "aggregatePercentError": 9.803921568627452
+    },
+    "math": {
+      "samples": 2,
+      "meanAbsoluteError": 6.5,
+      "meanAbsolutePercentError": 21.014492753623188,
+      "medianAbsolutePercentError": 8.695652173913043,
+      "p95AbsolutePercentError": 33.33333333333333,
+      "maxAbsolutePercentError": 33.33333333333333,
+      "meanSignedPercentError": -21.014492753623188,
+      "aggregateEstimate": 43,
+      "aggregateReference": 56,
+      "aggregatePercentError": 23.214285714285715
+    },
+    "urls": {
+      "samples": 2,
+      "meanAbsoluteError": 4.5,
+      "meanAbsolutePercentError": 21.590909090909093,
+      "medianAbsolutePercentError": 18.181818181818183,
+      "p95AbsolutePercentError": 25,
+      "maxAbsolutePercentError": 25,
+      "meanSignedPercentError": -3.4090909090909083,
+      "aggregateEstimate": 41,
+      "aggregateReference": 42,
+      "aggregatePercentError": 2.380952380952381
+    },
+    "large-mixed": {
+      "samples": 2,
+      "meanAbsoluteError": 296.5,
+      "meanAbsolutePercentError": 29.47247023809524,
+      "medianAbsolutePercentError": 21.333333333333336,
+      "p95AbsolutePercentError": 37.611607142857146,
+      "maxAbsolutePercentError": 37.611607142857146,
+      "meanSignedPercentError": 29.47247023809524,
+      "aggregateEstimate": 2689,
+      "aggregateReference": 2096,
+      "aggregatePercentError": 28.291984732824428
+    }
+  },
+  "performanceBudgetMs": 500
+}

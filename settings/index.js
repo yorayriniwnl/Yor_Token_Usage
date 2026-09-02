@@ -105,6 +105,7 @@ async function sendRuntimeMessage(message) {
 var saveState = document.querySelector("#save-state");
 var siteSettings = document.querySelector("#site-settings");
 var siteOrder = ["chatgpt", "claude", "gemini", "perplexity", "grok"];
+var MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -116,6 +117,11 @@ function escapeHtml(value) {
 }
 function setStatus(message) {
   saveState.textContent = message;
+}
+function applyPresentation(preferences) {
+  const theme = preferences.theme === "system" ? (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark") : preferences.theme;
+  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+  document.documentElement.classList.toggle("compact", preferences.compactMode === true);
 }
 async function runButtonAction(button, task, doneLabel = "Done") {
   const originalLabel = button.textContent;
@@ -142,6 +148,104 @@ function fillSelect(element, options, value) {
 }
 function inputValue(value) {
   return escapeHtml(value ?? "");
+}
+function describeRuntimeError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/chrome|sendMessage|extension context|cannot read properties of undefined|is not a function/i.test(message)) {
+    return "The extension background service is unavailable. Reload Yor and reopen settings.";
+  }
+  return message.slice(0, 240) || "The extension could not complete this action.";
+}
+function cloudPermissionPattern(apiBaseUrl) {
+  const parsed = new URL(apiBaseUrl);
+  return `${parsed.protocol}//${parsed.hostname}/*`;
+}
+function formatCloudTime(timestamp) {
+  if (!Number.isFinite(timestamp)) return "not yet";
+  return new Intl.DateTimeFormat(void 0, { dateStyle: "medium", timeStyle: "short" }).format(new Date(timestamp));
+}
+function applyCloudStatus(status, message) {
+  const pill = document.querySelector("#cloud-status-pill");
+  const summary = document.querySelector("#cloud-summary");
+  const apiInput = document.querySelector("#cloud-api-url");
+  const syncButton = document.querySelector("#cloud-sync-btn");
+  const disconnectButton = document.querySelector("#cloud-disconnect-btn");
+  const connected = status?.connected === true;
+  const configured = status?.configured === true;
+  const hasError = Boolean(status?.lastError);
+  pill.dataset.state = hasError ? "error" : connected ? "connected" : "local";
+  pill.textContent = hasError ? "Needs attention" : connected ? "Connected" : configured ? "Disconnected" : "Local only";
+  if (status?.apiBaseUrl && document.activeElement !== apiInput) {
+    apiInput.value = status.apiBaseUrl;
+  }
+  syncButton.disabled = !connected;
+  disconnectButton.disabled = !configured && !status?.enabled;
+  if (message) {
+    summary.textContent = message;
+    return;
+  }
+  if (hasError) {
+    summary.textContent = `${status.lastError} Local capture is unaffected.`;
+    return;
+  }
+  if (!connected) {
+    summary.textContent = configured ? "The backend is saved, but no access token is active in this browser session." : "No backend is connected. All usage remains on this device.";
+    return;
+  }
+  const account = status.account?.email || status.account?.userId || "authenticated account";
+  const quota = status.quota ? ` ${status.quota.remainingTokens.toLocaleString()} of ${status.quota.tokenCap.toLocaleString()} server tokens remain.` : "";
+  const expired = status.skippedExpiredEvents ? ` ${status.skippedExpiredEvents} event(s) older than 90 days were kept local.` : "";
+  summary.textContent = `Connected as ${account}. ${status.pendingEvents} local event(s) pending. Last sync: ${formatCloudTime(status.lastSyncedAt)}.${quota}${expired}`;
+}
+async function loadCloudStatus() {
+  const response = await sendRuntimeMessage({ type: "cloud-status" });
+  if (!response?.ok) throw new Error(response?.error ?? "Could not read cloud status.");
+  applyCloudStatus(response.status);
+  return response.status;
+}
+function wireCloudControls() {
+  const apiInput = document.querySelector("#cloud-api-url");
+  const tokenInput = document.querySelector("#cloud-access-token");
+  document.querySelector("#cloud-connect-btn").onclick = async (event) => {
+    try {
+      await runButtonAction(event.currentTarget, async () => {
+        const apiBaseUrl = apiInput.value.trim();
+        const accessToken = tokenInput.value.trim();
+        const permissionPattern = cloudPermissionPattern(apiBaseUrl);
+        const granted = await chrome.permissions.request({ origins: [permissionPattern] });
+        if (!granted) throw new Error("Cloud permission was not granted for that backend host.");
+        const response = await sendRuntimeMessage({ type: "cloud-connect", payload: { apiBaseUrl, accessToken } });
+        if (!response?.ok) throw new Error(response?.error ?? "Cloud connection failed.");
+        tokenInput.value = "";
+        applyCloudStatus(response.status, "Connected securely. Choose Sync now to upload eligible usage counters.");
+      }, "Connected");
+    } catch (error) {
+      applyCloudStatus({ configured: Boolean(apiInput.value), lastError: describeRuntimeError(error) });
+    }
+  };
+  document.querySelector("#cloud-sync-btn").onclick = async (event) => {
+    try {
+      await runButtonAction(event.currentTarget, async () => {
+        const response = await sendRuntimeMessage({ type: "cloud-sync" });
+        if (!response?.ok) throw new Error(response?.error ?? "Cloud sync failed.");
+        applyCloudStatus(response.status, `Sync complete. ${response.status.pendingEvents} event(s) remain queued locally.`);
+      }, "Synced");
+    } catch (error) {
+      await loadCloudStatus().catch(() => applyCloudStatus({ lastError: describeRuntimeError(error) }));
+    }
+  };
+  document.querySelector("#cloud-disconnect-btn").onclick = async (event) => {
+    try {
+      await runButtonAction(event.currentTarget, async () => {
+        const response = await sendRuntimeMessage({ type: "cloud-disconnect" });
+        if (!response?.ok) throw new Error(response?.error ?? "Cloud disconnect failed.");
+        tokenInput.value = "";
+        applyCloudStatus(response.status, "Disconnected. Session credentials were cleared; local history was preserved.");
+      }, "Disconnected");
+    } catch (error) {
+      applyCloudStatus({ lastError: describeRuntimeError(error) });
+    }
+  };
 }
 function renderSiteCard(site, preferences) {
   const settings = preferences.sites?.[site] ?? DEFAULT_PREFERENCES.sites[site];
@@ -184,9 +288,9 @@ function collectPreferences(snapshot) {
   next.showOverlay = document.querySelector("#show-overlay").checked;
   next.compactMode = document.querySelector("#compact-mode").checked;
   next.alerts.desktopNotifications = document.querySelector("#desktop-notifications").checked;
-  next.alerts.quotaWarningPercent = Number(document.querySelector("#quota-warning-percent").value);
-  next.alerts.largePromptTokens = Number(document.querySelector("#large-prompt-tokens").value);
-  next.alerts.anomalyMultiplier = Number(document.querySelector("#anomaly-multiplier").value);
+  next.alerts.quotaWarningPercent = readNumber(document.querySelector("#quota-warning-percent").value) ?? DEFAULT_PREFERENCES.alerts.quotaWarningPercent;
+  next.alerts.largePromptTokens = readNumber(document.querySelector("#large-prompt-tokens").value) ?? DEFAULT_PREFERENCES.alerts.largePromptTokens;
+  next.alerts.anomalyMultiplier = readNumber(document.querySelector("#anomaly-multiplier").value) ?? DEFAULT_PREFERENCES.alerts.anomalyMultiplier;
   for (const site of siteOrder) {
     const card = document.querySelector(`.site-card[data-site="${site}"]`);
     const resetKind = card.querySelector('[data-key="resetKind"]').value;
@@ -216,16 +320,19 @@ async function render() {
   try {
     snapshot = await sendRuntimeMessage({ type: "get-snapshot" });
   } catch (error) {
-    setStatus(`Could not load settings: ${error instanceof Error ? error.message : String(error)}`);
+    setStatus(`Could not load settings: ${describeRuntimeError(error)}`);
     siteSettings.innerHTML = '<div class="empty-state">Settings could not be loaded. Reopen the options page and try again.</div>';
+    applyCloudStatus({ lastError: describeRuntimeError(error) });
     return;
   }
   if (!snapshot?.state?.preferences) {
     setStatus("Could not load settings: snapshot data was incomplete.");
     siteSettings.innerHTML = '<div class="empty-state">Settings data was incomplete.</div>';
+    applyCloudStatus({ lastError: "Settings data was incomplete. Reload Yor and reopen settings." });
     return;
   }
   const preferences = snapshot.state.preferences;
+  applyPresentation(preferences);
   fillSelect(document.querySelector("#theme"), [
     { value: "system", label: "System" },
     { value: "dark", label: "Dark" },
@@ -247,6 +354,8 @@ async function render() {
   document.querySelector("#large-prompt-tokens").value = String(preferences.alerts.largePromptTokens);
   document.querySelector("#anomaly-multiplier").value = String(preferences.alerts.anomalyMultiplier);
   siteSettings.innerHTML = siteOrder.map((site) => renderSiteCard(site, preferences)).join("");
+  wireCloudControls();
+  await loadCloudStatus().catch((error) => applyCloudStatus({ lastError: describeRuntimeError(error) }));
   document.querySelector("#save-btn").onclick = async (event) => {
     try {
       await runButtonAction(event.currentTarget, async () => {
@@ -255,7 +364,7 @@ async function render() {
       }, "Saved");
       setStatus("Saved settings. New assumptions will be used on the next session refresh.");
     } catch (error) {
-      setStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus(`Save failed: ${describeRuntimeError(error)}`);
     }
   };
   document.querySelector("#test-notification-btn").onclick = async (event) => {
@@ -268,7 +377,7 @@ async function render() {
       }, "Sent");
       setStatus("Test notification sent.");
     } catch (error) {
-      setStatus(`Notification failed: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus(`Notification failed: ${describeRuntimeError(error)}`);
     }
   };
   document.querySelector("#export-btn").onclick = async (event) => {
@@ -281,24 +390,33 @@ async function render() {
         anchor.href = url;
         anchor.download = "yor-token-usage-export.json";
         anchor.click();
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }, "Exported");
       setStatus("Exported data to JSON.");
     } catch (error) {
-      setStatus(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus(`Export failed: ${describeRuntimeError(error)}`);
     }
   };
   document.querySelector("#import-input").onchange = async (event) => {
+    const input = event.currentTarget;
     try {
-      const file = event.currentTarget.files?.[0];
+      const file = input.files?.[0];
       if (!file) return;
+      if (file.size > MAX_IMPORT_BYTES) {
+        throw new Error("Import file is too large. Choose a JSON export smaller than 5 MB.");
+      }
       const text = await file.text();
       const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Import must contain a JSON object exported by Yor Token Usage.");
+      }
       snapshot = await sendRuntimeMessage({ type: "import-data", payload: parsed });
       setStatus("Imported data. Refreshing the settings view.");
       await render();
     } catch (error) {
-      setStatus(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus(`Import failed: ${describeRuntimeError(error)}`);
+    } finally {
+      input.value = "";
     }
   };
   document.querySelector("#restore-defaults-btn").onclick = async (event) => {
@@ -309,7 +427,26 @@ async function render() {
       setStatus("Restored default settings.");
       await render();
     } catch (error) {
-      setStatus(`Restore failed: ${error instanceof Error ? error.message : String(error)}`);
+      setStatus(`Restore failed: ${describeRuntimeError(error)}`);
+    }
+  };
+  document.querySelector("#clear-local-history-btn").onclick = async (event) => {
+    const confirmed = window.confirm("Delete all locally stored usage history and active sessions? Data already sent to an optional backend will not be deleted.");
+    if (!confirmed) {
+      setStatus("Local history was not changed.");
+      return;
+    }
+    try {
+      await runButtonAction(event.currentTarget, async () => {
+        snapshot = await sendRuntimeMessage({ type: "clear-local-history" });
+        if (!snapshot?.state || snapshot.state.usageEvents.length !== 0) {
+          throw new Error("The extension did not confirm that local history was cleared.");
+        }
+      }, "Cleared");
+      setStatus("Cleared local usage history and active sessions. Preferences were preserved.");
+      await render();
+    } catch (error) {
+      setStatus(`Clear failed: ${describeRuntimeError(error)}`);
     }
   };
 }

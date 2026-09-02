@@ -229,6 +229,11 @@ var trendChart = document.querySelector("#trend-chart");
 var modelBreakdown = document.querySelector("#model-breakdown");
 var suggestions = document.querySelector("#suggestions");
 var changeSummary = document.querySelector("#change-summary");
+function applyPresentation(preferences) {
+  const theme = preferences.theme === "system" ? (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark") : preferences.theme;
+  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+  document.documentElement.classList.toggle("compact", preferences.compactMode === true);
+}
 async function runButtonAction(button, task, doneLabel = "Done") {
   const originalLabel = button.textContent;
   button.classList.add("is-busy");
@@ -265,6 +270,13 @@ function renderLoading() {
   suggestions.innerHTML = '<div class="skeleton-chart short"></div>';
   changeSummary.innerHTML = '<span class="skeleton-line w-lg"></span>';
 }
+function describeRuntimeError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/chrome|sendMessage|extension context|cannot read properties of undefined|is not a function/i.test(message)) {
+    return "The extension background service is unavailable. Reload Yor and reopen this view.";
+  }
+  return message.slice(0, 240) || "The extension could not load this view.";
+}
 function renderError(message) {
   usageCard.innerHTML = `
     <div class="hero-copy">
@@ -295,12 +307,17 @@ function buildSessionSummary(session, snapshot) {
 function renderHero(snapshot) {
   const session = snapshot.currentSession;
   const percent = Number.isFinite(session?.quota.percentUsed) ? session.quota.percentUsed : 0;
-  const statusLabel = session?.quota.status === "limited" ? "Limit reached" : session?.quota.status === "warning" ? "Near limit" : session?.quota.accuracy === "exact" ? "Exact" : "Estimated";
+  const statusLabel = session?.quota.status === "limited" ? "Limit reached" : session?.quota.status === "warning" ? "Near limit" : session?.quota.accuracy === "exact" ? "Provider signal" : "Estimated";
+  const measurement = session?.currentEstimate?.measurement;
+  const measurementLabel = measurement?.measurementLevel === "approximation" ? "Approximate" : measurement?.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
+  const measurementConfidence = Number.isFinite(measurement?.confidence) ? `${Math.round(measurement.confidence * 100)}% confidence` : "confidence unknown";
+  const measurementMargin = Number.isFinite(measurement?.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}% bound` : "no error bound";
   usageCard.innerHTML = `
     <div class="hero-copy">
       <div>
         <h2>${escapeHtml(session ? `${SITE_LABELS[session.site]} \u2022 ${session.model}` : "No active AI tab")}</h2>
         <p>${escapeHtml(session ? `Reset ${session.quota.nextReset?.localLabel ?? "unknown"} \u2022 last update ${formatClock(session.lastUpdated)}` : "Pin the popup while you work to monitor usage in real time.")}</p>
+        ${session ? `<p class="measurement-note" title="${escapeHtml(measurement?.note ?? "Token provenance is unavailable.")}">${escapeHtml(`${measurementLabel} \u2022 ${measurementConfidence} \u2022 ${measurementMargin}`)}</p>` : ""}
       </div>
       <span class="status-chip">${escapeHtml(statusLabel)}</span>
     </div>
@@ -325,13 +342,14 @@ async function render() {
     const activeUrl = await getActiveUrl();
     snapshot = await sendRuntimeMessage({ type: "get-snapshot", activeUrl });
   } catch (error) {
-    renderError(error instanceof Error ? error.message : String(error));
+    renderError(describeRuntimeError(error));
     return;
   }
   if (!snapshot?.analytics || !snapshot?.summary) {
     renderError("Snapshot data was missing or incomplete.");
     return;
   }
+  applyPresentation(snapshot.state?.preferences ?? DEFAULT_PREFERENCES);
   renderHero(snapshot);
   renderSparkline(
     trendChart,
@@ -381,12 +399,14 @@ Reset: ${session.quota.nextReset?.localLabel ?? "unknown"}` : "No active AI sess
   };
   document.querySelector("#toggle-overlay-btn").onclick = async (event) => {
     await runButtonAction(event.currentTarget, async () => {
-      await sendToActiveTab({ type: "toggle-overlay" });
+      const response = await sendToActiveTab({ type: "toggle-overlay" });
+      if (!response?.ok) throw new Error("No supported AI tab is available.");
     }, "Toggled");
   };
   document.querySelector("#refresh-btn").onclick = async (event) => {
     await runButtonAction(event.currentTarget, async () => {
-      await sendToActiveTab({ type: "refresh-session" });
+      const response = await sendToActiveTab({ type: "refresh-session" });
+      if (!response?.ok) throw new Error("No supported AI tab is available.");
       await render();
     }, "Updated");
   };

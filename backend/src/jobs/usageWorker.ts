@@ -14,6 +14,8 @@ const BLOCK_MS = 5_000;
 const STALE_PENDING_IDLE_MS = 60_000;
 const MAX_RECLAIM_BATCHES = 5;
 const MAX_GROUP_PENDING_MESSAGES = 1_000;
+const RETRY_BASE_DELAY_MS = 1_000;
+const RETRY_MAX_DELAY_MS = 30_000;
 
 type RedisStreamMessage = [string, string[]];
 type RedisStreamReadResult = Array<[string, RedisStreamMessage[]]> | null;
@@ -51,6 +53,8 @@ async function requeueOrDeadLetter(id: string, payload: UsageBatchJob, error: un
   if (attempts >= MAX_ATTEMPTS) {
     await deadLetter(id, payload, error);
   } else {
+    const retryDelay = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempts - 1));
+    await sleep(retryDelay);
     await redis.xadd(STREAM, "*", "payload", JSON.stringify({ ...payload, attempts }));
     await redis.xack(STREAM, GROUP, id);
   }
@@ -161,10 +165,16 @@ async function loop(): Promise<void> {
   }
 }
 
-process.on("SIGTERM", async () => {
-  await redis.quit();
-  await prisma.$disconnect();
+let shuttingDown = false;
+const shutdown = async (signal: string): Promise<void> => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.info({ signal }, "usage worker shutting down");
+  await Promise.allSettled([redis.quit(), prisma.$disconnect()]);
   process.exit(0);
-});
+};
+
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));
 
 void loop();

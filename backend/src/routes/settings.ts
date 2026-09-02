@@ -32,10 +32,12 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     const userId = request.auth!.userId;
 
     const result = await app.prisma.$transaction(async (tx) => {
-      const conflict = async () => ({
-        conflict: true as const,
-        current: await tx.userSettings.findUnique({ where: { userId } })
-      });
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`);
+      const current = await tx.userSettings.findUnique({ where: { userId } });
+      const expectedVersion = current ? current.version + 1 : 1;
+      if (body.version !== expectedVersion) {
+        return { conflict: true as const, current };
+      }
 
       const writeAuditLog = async (version: number, previousVersion: number | null) => {
         await tx.auditLog.create({
@@ -48,37 +50,15 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
         });
       };
 
-      if (body.version === 1) {
-        try {
-          const settings = await tx.userSettings.create({
-            data: {
-              userId,
-              version: body.version,
-              payload
-            }
-          });
-          await writeAuditLog(body.version, null);
-          return { conflict: false as const, settings };
-        } catch (error) {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-            return conflict();
-          }
-          throw error;
-        }
-      }
-
-      const previousVersion = body.version - 1;
-      const update = await tx.userSettings.updateMany({
-        where: { userId, version: previousVersion },
-        data: { version: body.version, payload }
-      });
-
-      if (update.count !== 1) {
-        return conflict();
-      }
-
-      const settings = await tx.userSettings.findUniqueOrThrow({ where: { userId } });
-      await writeAuditLog(body.version, previousVersion);
+      const settings = current
+        ? await tx.userSettings.update({
+          where: { userId },
+          data: { version: body.version, payload }
+        })
+        : await tx.userSettings.create({
+          data: { userId, version: body.version, payload }
+        });
+      await writeAuditLog(body.version, current?.version ?? null);
       return { conflict: false as const, settings };
     });
 

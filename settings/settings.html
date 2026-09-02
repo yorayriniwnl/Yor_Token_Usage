@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>YOR // Token Usage Settings</title>
+    <title>Yor Token Usage Settings</title>
     <link rel="stylesheet" href="./settings.css" />
   </head>
   <body>
     <main class="app-shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">LOCAL POLICY CONTROLS</p>
-          <h1>YOR // TOKEN USAGE SETTINGS</h1>
+          <p class="eyebrow">Privacy-first controls</p>
+          <h1>Yor Token Usage Settings</h1>
           <p>Keep analytics local, tune reset rules, set alert thresholds, and override quota or cost assumptions when your plan differs.</p>
         </div>
         <div class="hero-actions">
@@ -35,6 +35,34 @@
         </div>
       </section>
 
+      <section class="panel" aria-labelledby="cloud-heading">
+        <div class="section-head cloud-head">
+          <div>
+            <h2 id="cloud-heading">Optional cloud sync</h2>
+            <p>Connect a deployed Yor backend without weakening local tracking.</p>
+          </div>
+          <span id="cloud-status-pill" class="status-pill" data-state="local">Local only</span>
+        </div>
+        <div class="cloud-grid">
+          <div class="cloud-copy">
+            <strong>Local remains the source of immediate truth.</strong>
+            <p>When connected, Yor uploads token counts, provider, model, thread ID, and timestamps. Prompt text and prompt previews never leave this browser.</p>
+            <p>The access token is held only in Chrome session storage and is cleared when the browser session ends or you disconnect.</p>
+          </div>
+          <div class="cloud-fields">
+            <label class="field"><span>Backend URL</span><input id="cloud-api-url" type="url" inputmode="url" placeholder="https://api.example.com" autocomplete="url" /></label>
+            <label class="field"><span>Short-lived OIDC access token</span><input id="cloud-access-token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a bearer token for this session" /></label>
+          </div>
+        </div>
+        <div class="hero-actions cloud-actions">
+          <button id="cloud-connect-btn" class="primary-btn">Connect securely</button>
+          <button id="cloud-sync-btn" class="ghost-btn" disabled>Sync now</button>
+          <button id="cloud-disconnect-btn" class="ghost-btn" disabled>Disconnect</button>
+        </div>
+        <p id="cloud-summary" class="cloud-summary" role="status" aria-live="polite">Checking cloud status…</p>
+        <p class="cloud-note">A Chrome permission prompt appears only for the backend host you enter. Production still needs a real OIDC provider and a backend allowlist containing this published extension ID.</p>
+      </section>
+
       <section class="panel">
         <div class="section-head"><h2>Per-site quota assumptions</h2></div>
         <div id="site-settings" class="site-grid"></div>
@@ -46,8 +74,10 @@
           <button id="export-btn" class="ghost-btn">Export data</button>
           <label class="ghost-btn file-btn">Import JSON<input id="import-input" type="file" accept="application/json" hidden /></label>
           <button id="restore-defaults-btn" class="ghost-btn">Restore defaults</button>
+          <button id="clear-local-history-btn" class="danger-btn">Clear local history</button>
         </div>
-        <p id="save-state" class="save-state"></p>
+        <p class="data-control-note">Clearing local history removes captured usage and active sessions from this browser. It does not delete data already sent to an optional backend.</p>
+        <p id="save-state" class="save-state" role="status" aria-live="polite"></p>
       </section>
     </main>
     <script type="module" src="./index.js"></script>

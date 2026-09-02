@@ -24,12 +24,12 @@ import { usageRoutes } from "./routes/usage.js";
 export async function buildApp() {
   const app = Fastify({
     logger: {
-      level: env.NODE_ENV === "production" ? "info" : "debug",
+      level: env.NODE_ENV === "test" ? "warn" : env.NODE_ENV === "production" ? "info" : "debug",
       redact: ["req.headers.authorization", "req.headers.cookie"]
     },
     requestIdHeader: "x-request-id",
     bodyLimit: 512 * 1024,
-    trustProxy: true
+    trustProxy: env.TRUST_PROXY
   });
 
   app.decorate("prisma", prisma);

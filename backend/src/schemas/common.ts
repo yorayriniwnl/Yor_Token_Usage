@@ -3,6 +3,7 @@ import { z } from "zod";
 export const providerSchema = z.string().min(1).max(40).regex(/^[a-z0-9_-]+$/i);
 export const modelSchema = z.string().min(1).max(120);
 export const clientEventIdSchema = z.string().min(8).max(128);
+export const idempotencyKeySchema = z.string().trim().min(1).max(160);
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 

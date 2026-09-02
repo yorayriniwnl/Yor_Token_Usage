@@ -4,6 +4,14 @@ Production backend for a browser extension that tracks token usage, syncs settin
 
 This is intentionally not a toy architecture. It assumes paying users, hostile clients, malformed imports, replay attempts, noisy extensions, and cost ceilings.
 
+## 0. Current release boundary
+
+The Chrome extension remains local-first, but version 1.1 contains an opt-in backend client. It uses a session-only OIDC bearer token to establish a device session, uploads at most five 100-event batches per sync, pulls recent cross-device usage, and reads server quota state. Prompt text and previews remain local. Backend failure never blocks capture.
+
+The repository still has no hosted OIDC client configuration, production API URL, published extension ID, billing checkout, or billing webhook. Those require provider credentials and product/financial decisions. Do not advertise turnkey account login or paid plans until those external integrations are configured and verified against the published extension. Quota totals are currently server-recorded client estimates, not provider billing counters or a payment-enforcement source of truth.
+
+For a production deployment and rollback runbook, see `OPERATIONS.md`.
+
 ## 1. Backend Requirements Audit
 
 Required services:
@@ -224,6 +232,13 @@ Request:
       "promptHash": "64-char-sha256-hex",
       "status": "COMPLETED",
       "accuracy": "ESTIMATED",
+      "schemaVersion": 1,
+      "measurementMethod": "dom-text-heuristic",
+      "measurementLevel": "approximation",
+      "confidence": 0.51,
+      "errorMarginPercent": 40,
+      "tokenizer": "none",
+      "source": "visible provider DOM text",
       "metadata": {}
     }
   ]
@@ -243,11 +258,26 @@ Response:
 Validation:
 
 - 1-100 events per batch.
+- Accepted cloud events cannot exceed the active plan's `maxEventsPerDay` in a UTC day. The counter reservation and Redis Stream enqueue are one atomic operation, and idempotent replays do not consume the limit twice.
 - Provider `[a-z0-9_-]`, max 40 chars.
 - Model max 120 chars.
 - `totalTokens >= promptTokens + outputTokens`.
 - Event not older than 90 days.
 - Event not more than 5 minutes in the future.
+- New ingestion rejects `EXACT` accuracy claims and `authoritative` measurement levels because no provider-authoritative token endpoint is connected; the legacy database enum remains for existing rows and future verified adapters.
+
+Daily-limit response: HTTP `429` with `Retry-After`. The matching idempotency response expires at the next UTC reset so the same buffered batch can be retried safely.
+
+```json
+{
+  "error": "daily_event_limit_reached",
+  "message": "The plan's UTC daily cloud-event limit has been reached",
+  "accepted": 0,
+  "queued": false,
+  "retryAfterSeconds": 1800,
+  "requestId": "req-id"
+}
+```
 
 ### GET `/v1/quota/check?provider=claude&model=sonnet-4.6`
 
@@ -262,6 +292,8 @@ Response:
   "tokenCap": 100000,
   "remainingTokens": 99000,
   "limited": false,
+  "usageAccuracy": "estimated",
+  "usageBasis": "server-recorded event totals; no provider billing counter is connected",
   "periodStart": "2026-04-01T00:00:00.000Z",
   "periodEnd": "2026-05-01T00:00:00.000Z",
   "periodSource": "calendar_month",
@@ -344,7 +376,7 @@ Response:
 - Usage events are deduped by `(userId, clientEventId)`.
 - Batch requests support `Idempotency-Key`; expired idempotency rows are swept by a Redis-locked cleanup job.
 - Queued usage jobs are schema-validated again before database ingestion.
-- Worker retries 5 times with exponential backoff.
+- Worker retries 5 times with bounded exponential backoff.
 - API uses bounded body sizes and request validation.
 - Extension should buffer usage events locally and retry with exponential backoff.
 - Extension should never block chat UX on backend availability.
@@ -381,7 +413,7 @@ Response:
 - Per-IP and per-user throttles.
 - Per-device identity and revocation.
 - Batch size caps.
-- Token/event caps.
+- Monthly token status plus an atomically enforced per-plan UTC daily cloud-event cap.
 - Subscription plan caps.
 - Diagnostics caps.
 - No raw prompt storage by default.
@@ -432,3 +464,20 @@ backend/
 - Load test usage ingestion with realistic batch sizes.
 - Verify CORS from the real published extension ID.
 - Verify rejected browser origins, invalid JWTs, replayed idempotency keys, and over-limit users.
+
+## 12. Reproducible local integration stack
+
+`compose.yaml` pins Postgres and Redis image digests and binds them only to loopback on nonstandard ports:
+
+- Postgres: `127.0.0.1:55433`
+- Redis: `127.0.0.1:56379`
+- Primary local database: `yor_tokens`
+- Disposable integration database: `yor_tokens_test`
+
+On Windows, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-local-stack.ps1
+```
+
+The script starts healthy dependencies, deploys migrations, seeds the free plan, runs the local-JWKS integration suite, and builds the runtime image. It stops containers on exit but preserves named volumes. Use `-KeepRunning` to leave dependencies running or `-SkipImageBuild` when only the database contract needs verification.

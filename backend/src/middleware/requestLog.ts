@@ -7,7 +7,8 @@ export async function registerRequestLogging(app: FastifyInstance): Promise<void
   });
 
   app.addHook("onResponse", async (request, reply) => {
-    if (request.url === "/healthz" || request.url === "/readyz" || request.url === "/metrics") return;
+    const path = request.url.split("?", 1)[0] ?? request.url;
+    if (path === "/healthz" || path === "/readyz" || path === "/metrics") return;
     const latencyMs = Date.now() - (request.startedAt ?? Date.now());
     const status = reply.statusCode === 429 ? "RATE_LIMITED" : reply.statusCode >= 400 ? "ERROR" : "OK";
 
@@ -21,7 +22,7 @@ export async function registerRequestLogging(app: FastifyInstance): Promise<void
         statusCode: reply.statusCode,
         status,
         latencyMs,
-        ipHash: hashForLog(clientIp(request.headers, request.ip)) ?? null,
+        ipHash: hashForLog(clientIp({}, request.ip)) ?? null,
         userAgentHash: hashForLog(request.headers["user-agent"]) ?? null
       }
     }).catch((error: unknown) => request.log.warn({ error }, "api request log failed"));

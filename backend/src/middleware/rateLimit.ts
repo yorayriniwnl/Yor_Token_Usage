@@ -8,9 +8,18 @@ interface RateLimitOptions {
   key: (request: FastifyRequest) => string | undefined;
 }
 
+const ATOMIC_RATE_LIMIT_SCRIPT = `
+local count = redis.call("INCR", KEYS[1])
+if count == 1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+end
+return count
+`;
+
 export function rateLimit(options: RateLimitOptions) {
   return async function rateLimitMiddleware(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-    if (request.url === "/healthz" || request.url === "/readyz" || request.url === "/metrics") return;
+    const path = request.url.split("?", 1)[0] ?? request.url;
+    if (path === "/healthz" || path === "/readyz" || path === "/metrics") return;
 
     const rawKey = options.key(request) ?? clientIp(request.headers, request.ip) ?? "anonymous";
     const keySource = hashForLog(rawKey) ?? "anonymous";
@@ -19,9 +28,24 @@ export function rateLimit(options: RateLimitOptions) {
     const resetSeconds = Math.max(1, (bucket + 1) * options.windowSeconds - nowSeconds);
     const redisKey = `rl:${options.scope}:${bucket}:${keySource}`;
 
-    const count = await request.server.redis.incr(redisKey);
-    if (count === 1) {
-      await request.server.redis.expire(redisKey, resetSeconds + 5);
+    let count: number;
+    try {
+      count = Number(await request.server.redis.eval(
+        ATOMIC_RATE_LIMIT_SCRIPT,
+        1,
+        redisKey,
+        String(resetSeconds + 5)
+      ));
+      if (!Number.isSafeInteger(count) || count < 1) {
+        throw new Error("Redis returned an invalid rate-limit counter");
+      }
+    } catch (error) {
+      request.log.error({ error, scope: options.scope }, "rate-limit dependency unavailable");
+      reply.code(503).send({
+        error: "rate_limit_unavailable",
+        message: "Traffic protection is temporarily unavailable. Try again shortly."
+      });
+      return;
     }
 
     reply.header("RateLimit-Limit", options.limit);

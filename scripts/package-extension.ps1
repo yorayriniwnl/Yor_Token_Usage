@@ -34,5 +34,59 @@ if (Test-Path -LiteralPath $outputPath) {
   Remove-Item -LiteralPath $outputPath
 }
 
-$paths = $extensionPaths | ForEach-Object { Join-Path $root $_ }
-Compress-Archive -Path $paths -DestinationPath $outputPath -CompressionLevel Optimal
+$outputDirectory = Split-Path -Parent $outputPath
+if ($outputDirectory -and -not (Test-Path -LiteralPath $outputDirectory)) {
+  New-Item -ItemType Directory -Path $outputDirectory | Out-Null
+}
+
+# Compress-Archive preserves source timestamps, which makes otherwise identical
+# release artifacts hash differently. Build the archive directly so ordering and
+# metadata are stable across repeated packages of the same source tree.
+$files = foreach ($extensionPath in $extensionPaths) {
+  $sourcePath = Join-Path $root $extensionPath
+  if (Test-Path -LiteralPath $sourcePath -PathType Container) {
+    Get-ChildItem -LiteralPath $sourcePath -Recurse -File
+  } else {
+    Get-Item -LiteralPath $sourcePath
+  }
+}
+$files = $files | Sort-Object {
+  [System.IO.Path]::GetRelativePath($root, $_.FullName).Replace("\", "/")
+}
+
+$fixedTimestamp = [System.DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [System.TimeSpan]::Zero)
+$archiveStream = [System.IO.File]::Open(
+  $outputPath,
+  [System.IO.FileMode]::CreateNew,
+  [System.IO.FileAccess]::Write,
+  [System.IO.FileShare]::None
+)
+$archive = [System.IO.Compression.ZipArchive]::new(
+  $archiveStream,
+  [System.IO.Compression.ZipArchiveMode]::Create,
+  $false
+)
+
+try {
+  foreach ($file in $files) {
+    $entryName = [System.IO.Path]::GetRelativePath($root, $file.FullName).Replace("\", "/")
+    $entry = $archive.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+    $entry.LastWriteTime = $fixedTimestamp
+    $entry.ExternalAttributes = 0
+
+    $inputStream = [System.IO.File]::OpenRead($file.FullName)
+    try {
+      $entryStream = $entry.Open()
+      try {
+        $inputStream.CopyTo($entryStream)
+      } finally {
+        $entryStream.Dispose()
+      }
+    } finally {
+      $inputStream.Dispose()
+    }
+  }
+} finally {
+  $archive.Dispose()
+  $archiveStream.Dispose()
+}

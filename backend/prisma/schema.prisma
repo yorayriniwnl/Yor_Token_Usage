@@ -39,6 +39,14 @@ enum Accuracy {
   INFERRED
 }
 
+enum MeasurementLevel {
+  AUTHORITATIVE
+  DETERMINISTIC
+  CALIBRATED_ESTIMATE
+  APPROXIMATION
+  UNKNOWN
+}
+
 enum QuotaWindowStatus {
   OPEN
   CLOSED
@@ -52,11 +60,11 @@ enum ApiLogStatus {
 }
 
 model User {
-  id          String   @id @default(uuid()) @db.Uuid
-  authSubject String   @unique @map("auth_subject")
+  id          String    @id @default(uuid()) @db.Uuid
+  authSubject String    @unique @map("auth_subject")
   email       String?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
   lastSeenAt  DateTime? @map("last_seen_at")
 
   devices       ExtensionInstall[]
@@ -74,20 +82,20 @@ model User {
 }
 
 model ExtensionInstall {
-  id             String       @id @default(uuid()) @db.Uuid
-  userId         String       @map("user_id") @db.Uuid
-  installId      String       @map("install_id")
-  extensionId    String       @map("extension_id")
-  extensionVer   String?      @map("extension_ver")
-  browser        String?
-  platform       String?
-  deviceName     String?      @map("device_name")
-  fingerprintHash String?     @map("fingerprint_hash")
-  status         DeviceStatus @default(ACTIVE)
-  firstSeenAt    DateTime     @default(now()) @map("first_seen_at")
-  lastSeenAt     DateTime     @default(now()) @map("last_seen_at")
+  id              String       @id @default(uuid()) @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  installId       String       @map("install_id")
+  extensionId     String       @map("extension_id")
+  extensionVer    String?      @map("extension_ver")
+  browser         String?
+  platform        String?
+  deviceName      String?      @map("device_name")
+  fingerprintHash String?      @map("fingerprint_hash")
+  status          DeviceStatus @default(ACTIVE)
+  firstSeenAt     DateTime     @default(now()) @map("first_seen_at")
+  lastSeenAt      DateTime     @default(now()) @map("last_seen_at")
 
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageEvents UsageEvent[]
   apiLogs     ApiRequestLog[]
   errorLogs   ErrorLog[]
@@ -111,22 +119,29 @@ model UserSettings {
 }
 
 model UsageEvent {
-  id            String           @id @default(uuid()) @db.Uuid
-  userId        String           @map("user_id") @db.Uuid
-  deviceId      String?          @map("device_id") @db.Uuid
-  clientEventId String           @map("client_event_id")
-  provider      String
-  model         String
-  threadId      String?          @map("thread_id")
-  occurredAt    DateTime         @map("occurred_at")
-  promptTokens  Int              @map("prompt_tokens")
-  outputTokens  Int              @map("output_tokens")
-  totalTokens   Int              @map("total_tokens")
-  promptHash    String?          @map("prompt_hash")
-  status        UsageEventStatus @default(COMPLETED)
-  accuracy      Accuracy         @default(ESTIMATED)
-  metadata      Json?
-  createdAt     DateTime         @default(now()) @map("created_at")
+  id                 String           @id @default(uuid()) @db.Uuid
+  userId             String           @map("user_id") @db.Uuid
+  deviceId           String?          @map("device_id") @db.Uuid
+  clientEventId      String           @map("client_event_id")
+  provider           String
+  model              String
+  threadId           String?          @map("thread_id")
+  occurredAt         DateTime         @map("occurred_at")
+  promptTokens       Int              @map("prompt_tokens")
+  outputTokens       Int              @map("output_tokens")
+  totalTokens        Int              @map("total_tokens")
+  promptHash         String?          @map("prompt_hash")
+  status             UsageEventStatus @default(COMPLETED)
+  accuracy           Accuracy         @default(ESTIMATED)
+  schemaVersion      Int              @default(1) @map("schema_version")
+  measurementMethod  String           @default("unknown") @map("measurement_method")
+  measurementLevel   MeasurementLevel @default(UNKNOWN) @map("measurement_level")
+  confidence         Float            @default(0)
+  errorMarginPercent Float            @default(100) @map("error_margin_percent")
+  tokenizer          String           @default("none")
+  source             String           @default("Legacy event without measurement metadata")
+  metadata           Json?
+  createdAt          DateTime         @default(now()) @map("created_at")
 
   user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   device ExtensionInstall? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
@@ -197,14 +212,14 @@ model Subscription {
 }
 
 model UserSecret {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @map("user_id") @db.Uuid
-  name        String
-  ciphertext  Bytes
-  keyId       String   @map("key_id")
-  nonce       Bytes?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  name       String
+  ciphertext Bytes
+  keyId      String   @map("key_id")
+  nonce      Bytes?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -213,18 +228,18 @@ model UserSecret {
 }
 
 model ApiRequestLog {
-  id          String       @id @default(uuid()) @db.Uuid
-  userId      String?      @map("user_id") @db.Uuid
-  deviceId    String?      @map("device_id") @db.Uuid
-  requestId   String       @map("request_id")
-  method      String
-  route       String
-  statusCode  Int          @map("status_code")
-  status      ApiLogStatus
-  latencyMs   Int          @map("latency_ms")
-  ipHash      String?      @map("ip_hash")
-  userAgentHash String?    @map("user_agent_hash")
-  createdAt   DateTime     @default(now()) @map("created_at")
+  id            String       @id @default(uuid()) @db.Uuid
+  userId        String?      @map("user_id") @db.Uuid
+  deviceId      String?      @map("device_id") @db.Uuid
+  requestId     String       @map("request_id")
+  method        String
+  route         String
+  statusCode    Int          @map("status_code")
+  status        ApiLogStatus
+  latencyMs     Int          @map("latency_ms")
+  ipHash        String?      @map("ip_hash")
+  userAgentHash String?      @map("user_agent_hash")
+  createdAt     DateTime     @default(now()) @map("created_at")
 
   user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   device ExtensionInstall? @relation(fields: [deviceId], references: [id], onDelete: SetNull)

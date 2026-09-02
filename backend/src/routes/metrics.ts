@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import client from "prom-client";
+import * as client from "@prometheus-io/client";
 import { env } from "../config/env.js";
 import { safeEqual } from "../lib/security.js";
 

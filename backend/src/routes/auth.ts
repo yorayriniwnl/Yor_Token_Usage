@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { upsertDevice } from "../services/devices.js";
+import { PlanUnavailableError, resolveEntitlement } from "../services/plans.js";
 
 const authSessionIpLimiter = rateLimit({
   scope: "auth-session-ip",
@@ -25,14 +26,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request) => {
       const device = await upsertDevice(request);
-      const subscription = await app.prisma.subscription.findFirst({
-        where: {
-          userId: request.auth!.userId,
-          status: { in: ["TRIALING", "ACTIVE", "PAST_DUE"] }
-        },
-        include: { plan: true },
-        orderBy: { createdAt: "desc" }
-      });
+      const { plan, subscription } = await resolveEntitlement(app.prisma, request.auth!.userId);
+      if (!plan) throw new PlanUnavailableError();
 
       return {
         user: {
@@ -44,7 +39,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           installId: device.installId,
           status: device.status
         },
-        plan: subscription?.plan ?? null,
+        plan,
         subscription: subscription ? {
           status: subscription.status,
           currentPeriodEnd: subscription.currentPeriodEnd

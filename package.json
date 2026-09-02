@@ -2,6 +2,10 @@
   "name": "yor-token-usage-extension",
   "private": true,
   "scripts": {
-    "design:check": "node scripts/check-design.mjs"
+    "design:check": "node scripts/check-design.mjs",
+    "accuracy:benchmark": "node scripts/benchmark-accuracy.mjs"
+  },
+  "devDependencies": {
+    "gpt-tokenizer": "4.0.0"
   }
 }

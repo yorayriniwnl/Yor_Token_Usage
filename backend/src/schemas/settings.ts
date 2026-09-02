@@ -7,7 +7,7 @@ export const settingsPayloadSchema = z.object({
 }).catchall(jsonValueSchema);
 
 export const settingsUpdateSchema = z.object({
-  version: z.number().int().min(1),
+  version: z.number().int().min(1).max(1_000_000),
   payload: settingsPayloadSchema
 }).superRefine((value, context) => {
   if (value.payload.version !== value.version) {

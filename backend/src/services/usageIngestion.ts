@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { usageBatchJobSchema } from "../schemas/usage.js";
 
 type InsertedUsageRow = {
@@ -21,6 +22,7 @@ function addDays(date: Date, days: number): Date {
 export async function processUsageBatch(prisma: PrismaClient, job: unknown): Promise<{ accepted: number }> {
   const payload = usageBatchJobSchema.parse(job);
   const rows = payload.events.map((event) => ({
+    id: randomUUID(),
     userId: payload.userId,
     deviceId: payload.deviceId,
     clientEventId: event.clientEventId,
@@ -34,6 +36,13 @@ export async function processUsageBatch(prisma: PrismaClient, job: unknown): Pro
     promptHash: event.promptHash,
     status: event.status,
     accuracy: event.accuracy,
+    schemaVersion: event.schemaVersion,
+    measurementMethod: event.measurementMethod,
+    measurementLevel: event.measurementLevel,
+    confidence: event.confidence,
+    errorMarginPercent: event.errorMarginPercent,
+    tokenizer: event.tokenizer,
+    source: event.source,
     metadata: event.metadata
   }));
 
@@ -42,6 +51,7 @@ export async function processUsageBatch(prisma: PrismaClient, job: unknown): Pro
   return prisma.$transaction(async (tx) => {
     const inserted = await tx.$queryRaw<InsertedUsageRow[]>(Prisma.sql`
       INSERT INTO usage_events (
+        id,
         user_id,
         device_id,
         client_event_id,
@@ -55,9 +65,17 @@ export async function processUsageBatch(prisma: PrismaClient, job: unknown): Pro
         prompt_hash,
         status,
         accuracy,
+        schema_version,
+        measurement_method,
+        measurement_level,
+        confidence,
+        error_margin_percent,
+        tokenizer,
+        source,
         metadata
       )
       VALUES ${Prisma.join(rows.map((row) => Prisma.sql`(
+        ${row.id}::uuid,
         ${row.userId}::uuid,
         ${row.deviceId ?? null}::uuid,
         ${row.clientEventId},
@@ -71,6 +89,13 @@ export async function processUsageBatch(prisma: PrismaClient, job: unknown): Pro
         ${row.promptHash ?? null},
         ${row.status}::"UsageEventStatus",
         ${row.accuracy}::"Accuracy",
+        ${row.schemaVersion},
+        ${row.measurementMethod},
+        ${row.measurementLevel.toUpperCase()}::"MeasurementLevel",
+        ${row.confidence},
+        ${row.errorMarginPercent},
+        ${row.tokenizer},
+        ${row.source},
         ${row.metadata ? JSON.stringify(row.metadata) : null}::jsonb
       )`))}
       ON CONFLICT (user_id, client_event_id) DO NOTHING

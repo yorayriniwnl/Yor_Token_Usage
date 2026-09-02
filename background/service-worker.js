@@ -1,8 +1,12 @@
 // src/lib/constants.ts
 var STATE_KEY = "yor-token-usage-state";
 var PREFERENCES_SYNC_KEY = "yor-token-usage-preferences";
+var CLOUD_CONFIG_KEY = "yor-token-usage-cloud-config";
+var CLOUD_SESSION_KEY = "yor-token-usage-cloud-session";
 var APP_VERSION = 1;
 var HISTORY_LIMIT = 2500;
+var CLOUD_MAX_BATCHES_PER_SYNC = 5;
+var CLOUD_EVENT_MAX_AGE_MS = 90 * 24 * 60 * 60_000;
 var SITE_LABELS = {
   chatgpt: "ChatGPT",
   claude: "Claude",
@@ -604,6 +608,7 @@ function invalidateSnapshotAnalytics() {
 
 // src/storage/store.ts
 var memoryStorage = /* @__PURE__ */ new Map();
+var memorySessionStorage = /* @__PURE__ */ new Map();
 var stateQueue = Promise.resolve();
 function logStateOperationError(error) {
   console.error("Yor Token Usage state operation failed", error);
@@ -616,10 +621,13 @@ function enqueueStateOperation(operation) {
   return queuedOperation;
 }
 function localArea() {
-  return chrome?.storage?.local;
+  return typeof chrome !== "undefined" ? chrome.storage?.local : void 0;
 }
 function syncArea() {
-  return chrome?.storage?.sync;
+  return typeof chrome !== "undefined" ? chrome.storage?.sync : void 0;
+}
+function sessionArea() {
+  return typeof chrome !== "undefined" ? chrome.storage?.session : void 0;
 }
 async function storageGet(key) {
   const area = localArea();
@@ -639,6 +647,32 @@ async function storageSet(value) {
     memoryStorage.set(key, entry);
   }
 }
+async function sessionStorageGet(key) {
+  const area = sessionArea();
+  if (area) {
+    const result = await area.get(key);
+    return result[key];
+  }
+  return memorySessionStorage.get(key);
+}
+async function sessionStorageSet(value) {
+  const area = sessionArea();
+  if (area) {
+    await area.set(value);
+    return;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    memorySessionStorage.set(key, entry);
+  }
+}
+async function sessionStorageRemove(key) {
+  const area = sessionArea();
+  if (area) {
+    await area.remove(key);
+    return;
+  }
+  memorySessionStorage.delete(key);
+}
 function defaultPromptAnalysis() {
   return {
     inputTokens: 0,
@@ -654,7 +688,8 @@ function defaultPromptAnalysis() {
     repeatedInstructions: [],
     redundantSections: [],
     largePaste: false,
-    compressionScore: 0
+    compressionScore: 0,
+    measurement: defaultMeasurement()
   };
 }
 function defaultQuotaStatus() {
@@ -682,6 +717,54 @@ function finiteNumberOr(value, fallback = 0) {
 function nonNegativeNumberOr(value, fallback = 0) {
   return Math.max(0, finiteNumberOr(value, fallback));
 }
+function boundedNonNegativeNumberOr(value, max, fallback = 0) {
+  return Math.min(max, nonNegativeNumberOr(value, fallback));
+}
+function boundedString(value, maxLength, fallback = "") {
+  return typeof value === "string" ? value.slice(0, maxLength) : fallback;
+}
+function boundedNonEmptyString(value, maxLength, fallback = "") {
+  const normalized = boundedString(value, maxLength);
+  return normalized || fallback;
+}
+function defaultMeasurement(provider = "generic", model = "unknown") {
+  return {
+    schemaVersion: 1,
+    measurementMethod: "unknown",
+    measurementLevel: "unknown",
+    confidence: 0,
+    errorMarginPercent: 100,
+    provider: boundedString(provider, 64, "generic"),
+    model: boundedString(model, 120, "unknown"),
+    tokenizer: "none",
+    source: "Legacy event without measurement metadata",
+    note: "Token provenance was not recorded; treat this value as unknown."
+  };
+}
+function normalizeMeasurement(value, fallback = {}) {
+  const base = defaultMeasurement(fallback.provider, fallback.model);
+  const raw = isPlainObject(value) ? value : {};
+  const levels = ["authoritative", "deterministic", "calibrated_estimate", "approximation", "unknown"];
+  const rawLevel = typeof raw.measurementLevel === "string" ? raw.measurementLevel.toLowerCase() : "";
+  const unverifiedAuthoritativeClaim = rawLevel === "authoritative";
+  return {
+    ...base,
+    schemaVersion: clamp(Math.floor(finiteNumberOr(raw.schemaVersion, base.schemaVersion)), 1, 100),
+    measurementMethod: boundedNonEmptyString(raw.measurementMethod, 80, fallback.measurementMethod ?? base.measurementMethod),
+    measurementLevel: unverifiedAuthoritativeClaim ? "unknown" : levels.includes(rawLevel) ? rawLevel : fallback.measurementLevel ?? base.measurementLevel,
+    confidence: unverifiedAuthoritativeClaim ? 0 : clamp(finiteNumberOr(raw.confidence, fallback.confidence ?? base.confidence), 0, 1),
+    errorMarginPercent: unverifiedAuthoritativeClaim ? 100 : clamp(nonNegativeNumberOr(raw.errorMarginPercent, fallback.errorMarginPercent ?? base.errorMarginPercent), 0, 1000),
+    provider: boundedNonEmptyString(raw.provider, 64, fallback.provider ?? base.provider),
+    model: boundedNonEmptyString(raw.model, 120, fallback.model ?? base.model),
+    tokenizer: boundedNonEmptyString(raw.tokenizer, 80, base.tokenizer),
+    source: boundedNonEmptyString(raw.source, 160, fallback.source ?? base.source),
+    note: unverifiedAuthoritativeClaim ? "Provider-authoritative metadata was downgraded until a verified adapter is connected." : boundedNonEmptyString(raw.note, 240, base.note)
+  };
+}
+function timestampOr(value, fallback = Date.now()) {
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.min(value, Date.now() + 5 * 60_000);
+}
 function createEmptySessions() {
   return {
     chatgpt: void 0,
@@ -696,27 +779,52 @@ function mergeSiteSettings(site, partialSite) {
   const defaults = DEFAULT_PREFERENCES.sites[site];
   const partial = isPlainObject(partialSite) ? partialSite : {};
   const partialResetRule = isPlainObject(partial.resetRule) ? partial.resetRule : {};
+  const resetKinds = ["rolling", "hourly", "daily", "weekly", "custom", "unknown"];
+  const resetKind = resetKinds.includes(partialResetRule.kind) ? partialResetRule.kind : defaults.resetRule.kind;
+  const intervalMinutes = optionalNumberInRange(partialResetRule.intervalMinutes, 1, 525600);
+  const dayOfWeek = optionalNumberInRange(partialResetRule.dayOfWeek, 0, 6);
+  const anchorLocalTime = typeof partialResetRule.anchorLocalTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(partialResetRule.anchorLocalTime) ? partialResetRule.anchorLocalTime : defaults.resetRule.anchorLocalTime;
   return {
     ...defaults,
-    ...partial,
+    enabled: typeof partial.enabled === "boolean" ? partial.enabled : defaults.enabled,
+    tokenBudget: optionalNumberInRange(partial.tokenBudget, 0, 4_000_000_000),
+    contextWindow: optionalNumberInRange(partial.contextWindow, 1, 10_000_000),
+    quotaTierLabel: typeof partial.quotaTierLabel === "string" ? partial.quotaTierLabel.slice(0, 80) : defaults.quotaTierLabel,
+    costInputPer1k: optionalNumberInRange(partial.costInputPer1k, 0, 1000),
+    costOutputPer1k: optionalNumberInRange(partial.costOutputPer1k, 0, 1000),
     resetRule: {
       ...defaults.resetRule,
-      ...partialResetRule
+      kind: resetKind,
+      ...(intervalMinutes !== void 0 ? { intervalMinutes } : {}),
+      ...(anchorLocalTime ? { anchorLocalTime } : {}),
+      ...(dayOfWeek !== void 0 ? { dayOfWeek } : {}),
+      inferred: true,
+      description: typeof partialResetRule.description === "string" ? partialResetRule.description.slice(0, 240) : defaults.resetRule.description
     }
   };
 }
+function optionalNumberInRange(value, min, max) {
+  return Number.isFinite(value) ? clamp(value, min, max) : void 0;
+}
 function mergePreferences(partial) {
   const partialPreferences = isPlainObject(partial) ? partial : {};
+  const partialAlerts = isPlainObject(partialPreferences.alerts) ? partialPreferences.alerts : {};
   const sites = Object.keys(DEFAULT_PREFERENCES.sites).reduce((acc, site) => {
     acc[site] = mergeSiteSettings(site, partialPreferences.sites?.[site]);
     return acc;
   }, {});
   return {
-    ...DEFAULT_PREFERENCES,
-    ...partialPreferences,
+    theme: ["system", "dark", "light"].includes(partialPreferences.theme) ? partialPreferences.theme : DEFAULT_PREFERENCES.theme,
+    compactMode: partialPreferences.compactMode === true,
+    showOverlay: partialPreferences.showOverlay !== false,
+    privacyMode: ["local-only", "sync-preferences"].includes(partialPreferences.privacyMode) ? partialPreferences.privacyMode : DEFAULT_PREFERENCES.privacyMode,
     alerts: {
       ...DEFAULT_PREFERENCES.alerts,
-      ...(isPlainObject(partialPreferences.alerts) ? partialPreferences.alerts : {})
+      quotaWarningPercent: clamp(finiteNumberOr(partialAlerts.quotaWarningPercent, DEFAULT_PREFERENCES.alerts.quotaWarningPercent), 1, 100),
+      largePromptTokens: clamp(finiteNumberOr(partialAlerts.largePromptTokens, DEFAULT_PREFERENCES.alerts.largePromptTokens), 100, 2_000_000),
+      anomalyMultiplier: clamp(finiteNumberOr(partialAlerts.anomalyMultiplier, DEFAULT_PREFERENCES.alerts.anomalyMultiplier), 1, 10),
+      desktopNotifications: partialAlerts.desktopNotifications !== false,
+      badgeMode: ["percent", "remaining", "off"].includes(partialAlerts.badgeMode) ? partialAlerts.badgeMode : DEFAULT_PREFERENCES.alerts.badgeMode
     },
     sites
   };
@@ -733,7 +841,7 @@ function buildUsageEventKeyMap(events) {
   return keys;
 }
 function normalizeUsageEventKeys(raw, usageEvents) {
-  return isPlainObject(raw) ? raw : buildUsageEventKeyMap(usageEvents);
+  return buildUsageEventKeyMap(usageEvents);
 }
 function hasUsageEventKey(keys, key) {
   return Object.prototype.hasOwnProperty.call(keys, key);
@@ -741,6 +849,7 @@ function hasUsageEventKey(keys, key) {
 function normalizeSession(session) {
   if (!isPlainObject(session)) return void 0;
   const site = normalizeSite(session.site);
+  const model = boundedString(session.model, 120, "generic");
   const defaultAnalysis = defaultPromptAnalysis();
   const currentEstimate = isPlainObject(session.currentEstimate) ? session.currentEstimate : defaultPromptAnalysis();
   const currentThread = isPlainObject(session.currentThread) ? session.currentThread : void 0;
@@ -748,15 +857,15 @@ function normalizeSession(session) {
   return {
     ...session,
     site,
-    model: stringOr(session.model, "generic"),
-    threadId: stringOr(session.threadId, "default"),
-    currentInput: stringOr(session.currentInput),
+    model,
+    threadId: boundedString(session.threadId, 256, "default"),
+    currentInput: boundedString(session.currentInput, 250_000),
     currentEstimate: {
       ...defaultAnalysis,
       ...currentEstimate,
-      inputTokens: nonNegativeNumberOr(currentEstimate.inputTokens),
-      outputTokensEstimate: nonNegativeNumberOr(currentEstimate.outputTokensEstimate),
-      totalTokens: nonNegativeNumberOr(currentEstimate.totalTokens),
+      inputTokens: boundedNonNegativeNumberOr(currentEstimate.inputTokens, 2_000_000),
+      outputTokensEstimate: boundedNonNegativeNumberOr(currentEstimate.outputTokensEstimate, 2_000_000),
+      totalTokens: boundedNonNegativeNumberOr(currentEstimate.totalTokens, 4_000_000),
       sections: Array.isArray(currentEstimate.sections) ? currentEstimate.sections : [],
       suggestions: Array.isArray(currentEstimate.suggestions) ? currentEstimate.suggestions : [],
       variants: {
@@ -768,29 +877,30 @@ function normalizeSession(session) {
       repeatedInstructions: Array.isArray(currentEstimate.repeatedInstructions) ? currentEstimate.repeatedInstructions : [],
       redundantSections: Array.isArray(currentEstimate.redundantSections) ? currentEstimate.redundantSections : [],
       largePaste: currentEstimate.largePaste === true,
-      compressionScore: clamp(nonNegativeNumberOr(currentEstimate.compressionScore), 0, 100)
+      compressionScore: clamp(nonNegativeNumberOr(currentEstimate.compressionScore), 0, 100),
+      measurement: normalizeMeasurement(currentEstimate.measurement, { provider: site, model })
     },
     currentThread: currentThread ? {
       ...currentThread,
-      threadId: stringOr(currentThread.threadId, stringOr(session.threadId, "default")),
+      threadId: boundedString(currentThread.threadId, 256, boundedString(session.threadId, 256, "default")),
       site,
-      model: stringOr(currentThread.model, stringOr(session.model, "generic")),
-      messageCount: nonNegativeNumberOr(currentThread.messageCount),
-      promptTokens: nonNegativeNumberOr(currentThread.promptTokens),
-      outputTokens: nonNegativeNumberOr(currentThread.outputTokens),
-      totalTokens: nonNegativeNumberOr(currentThread.totalTokens),
-      lastUpdated: Number.isFinite(currentThread.lastUpdated) ? currentThread.lastUpdated : Date.now(),
-      contextGrowth: Array.isArray(currentThread.contextGrowth) ? currentThread.contextGrowth.filter(Number.isFinite).map((value) => Math.max(0, value)).slice(-25) : []
+      model: boundedString(currentThread.model, 120, boundedString(session.model, 120, "generic")),
+      messageCount: boundedNonNegativeNumberOr(currentThread.messageCount, 10_000),
+      promptTokens: boundedNonNegativeNumberOr(currentThread.promptTokens, 8_000_000),
+      outputTokens: boundedNonNegativeNumberOr(currentThread.outputTokens, 8_000_000),
+      totalTokens: boundedNonNegativeNumberOr(currentThread.totalTokens, 16_000_000),
+      lastUpdated: timestampOr(currentThread.lastUpdated),
+      contextGrowth: Array.isArray(currentThread.contextGrowth) ? currentThread.contextGrowth.filter(Number.isFinite).map((value) => boundedNonNegativeNumberOr(value, 16_000_000)).slice(-25) : []
     } : void 0,
     quota: {
       ...defaultQuotaStatus(),
       ...quota,
-      usedTokens: nonNegativeNumberOr(quota.usedTokens),
-      remainingTokens: Number.isFinite(quota.remainingTokens) ? Math.max(0, quota.remainingTokens) : void 0,
+      usedTokens: boundedNonNegativeNumberOr(quota.usedTokens, 4_000_000_000),
+      remainingTokens: Number.isFinite(quota.remainingTokens) ? Math.min(4_000_000_000, Math.max(0, quota.remainingTokens)) : void 0,
       percentUsed: Number.isFinite(quota.percentUsed) ? clamp(quota.percentUsed, 0, 100) : void 0
     },
-    lastUpdated: Number.isFinite(session.lastUpdated) ? session.lastUpdated : Date.now(),
-    lastSeenUrl: stringOr(session.lastSeenUrl),
+    lastUpdated: timestampOr(session.lastUpdated),
+    lastSeenUrl: boundedString(session.lastSeenUrl, 2_048),
     adapterConfidence: clamp(finiteNumberOr(session.adapterConfidence, 0), 0, 1)
   };
 }
@@ -806,26 +916,28 @@ function usageEventIdentity(event) {
 }
 function normalizeUsageEvent(event) {
   if (!isPlainObject(event)) return void 0;
-  const promptTokens = nonNegativeNumberOr(event.promptTokens);
-  const outputTokens = nonNegativeNumberOr(event.outputTokens);
-  const totalTokens = Math.max(promptTokens + outputTokens, nonNegativeNumberOr(event.totalTokens, promptTokens + outputTokens));
+  const site = normalizeSite(event.site);
+  const model = boundedString(event.model, 120, "generic");
+  const promptTokens = boundedNonNegativeNumberOr(event.promptTokens, 2_000_000);
+  const outputTokens = boundedNonNegativeNumberOr(event.outputTokens, 2_000_000);
+  const totalTokens = Math.min(4_000_000, Math.max(promptTokens + outputTokens, boundedNonNegativeNumberOr(event.totalTokens, 4_000_000, promptTokens + outputTokens)));
   return {
-    ...event,
-    site: normalizeSite(event.site),
-    model: stringOr(event.model, "generic"),
-    threadId: stringOr(event.threadId, "default"),
-    id: stringOr(event.id) || void 0,
-    timestamp: Number.isFinite(event.timestamp) && event.timestamp > 0 ? event.timestamp : Date.now(),
+    site,
+    model,
+    threadId: boundedString(event.threadId, 256, "default"),
+    id: boundedString(event.id, 128) || void 0,
+    timestamp: timestampOr(event.timestamp),
     promptTokens,
     outputTokens,
     totalTokens,
-    promptChars: nonNegativeNumberOr(event.promptChars, stringOr(event.promptPreview).length),
-    outputChars: nonNegativeNumberOr(event.outputChars),
-    status: event.status === "rate_limited" ? "rate_limited" : "completed",
-    promptPreview: stringOr(event.promptPreview),
-    optimizerSavings: nonNegativeNumberOr(event.optimizerSavings),
-    rateLimitMessage: typeof event.rateLimitMessage === "string" ? event.rateLimitMessage.slice(0, 500) : void 0,
-    resetAt: Number.isFinite(event.resetAt) && event.resetAt > 0 ? event.resetAt : void 0
+    promptChars: boundedNonNegativeNumberOr(event.promptChars, 10_000_000, boundedString(event.promptPreview, 140).length),
+    outputChars: boundedNonNegativeNumberOr(event.outputChars, 10_000_000),
+    status: ["completed", "rate_limited", "failed"].includes(event.status) ? event.status : "completed",
+    promptPreview: boundedString(event.promptPreview, 140),
+    optimizerSavings: boundedNonNegativeNumberOr(event.optimizerSavings, 4_000_000),
+    rateLimitMessage: boundedString(event.rateLimitMessage, 500) || void 0,
+    resetAt: Number.isFinite(event.resetAt) && event.resetAt > 0 ? timestampOr(event.resetAt) : void 0,
+    measurement: normalizeMeasurement(event.measurement, { provider: site, model })
   };
 }
 function normalizeUsageEvents(rawEvents) {
@@ -878,7 +990,13 @@ function sessionFingerprint(session) {
     currentEstimate: {
       inputTokens: session.currentEstimate?.inputTokens ?? 0,
       totalTokens: session.currentEstimate?.totalTokens ?? 0,
-      compressionScore: session.currentEstimate?.compressionScore ?? 0
+      compressionScore: session.currentEstimate?.compressionScore ?? 0,
+      measurement: {
+        method: session.currentEstimate?.measurement?.measurementMethod ?? "unknown",
+        level: session.currentEstimate?.measurement?.measurementLevel ?? "unknown",
+        confidence: session.currentEstimate?.measurement?.confidence ?? 0,
+        errorMarginPercent: session.currentEstimate?.measurement?.errorMarginPercent ?? 100
+      }
     },
     currentThread: {
       messageCount: session.currentThread?.messageCount ?? 0,
@@ -1121,6 +1239,464 @@ async function importState(state) {
   invalidateSnapshotAnalytics();
   return saveState(hydrateState(state));
 }
+async function clearLocalHistory() {
+  invalidateSnapshotAnalytics();
+  return updateState(async (state) => ({
+    ...state,
+    sessions: {},
+    usageEvents: [],
+    threads: {},
+    meta: {
+      notificationTimestamps: {},
+      usageEventKeys: {}
+    }
+  }));
+}
+
+// src/cloud/cloudSync.ts
+function normalizeCloudBaseUrl(value) {
+  const raw = boundedString(value, 2048).trim();
+  if (!raw) throw new Error("Enter the HTTPS URL for the Yor backend.");
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error("The backend URL is not valid.");
+  }
+  const isLocalHttp = parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+  if (parsed.protocol !== "https:" && !isLocalHttp) {
+    throw new Error("Cloud sync requires HTTPS. Plain HTTP is allowed only for localhost development.");
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error("The backend URL cannot contain credentials, a query, or a fragment.");
+  }
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+}
+function normalizeCloudKeyMap(value) {
+  if (!isPlainObject(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([key, status]) => {
+    return typeof key === "string" && key.length <= 512 && (status === true || status === "expired");
+  }).slice(-HISTORY_LIMIT * 2));
+}
+function normalizeCloudConfig(raw) {
+  const source = isPlainObject(raw) ? raw : {};
+  let apiBaseUrl = "";
+  if (source.apiBaseUrl) {
+    try {
+      apiBaseUrl = normalizeCloudBaseUrl(source.apiBaseUrl);
+    } catch {
+      apiBaseUrl = "";
+    }
+  }
+  const installId = typeof source.installId === "string" && /^[a-z0-9._:-]{8,128}$/i.test(source.installId) ? source.installId : "";
+  const connectionId = typeof source.connectionId === "string" && /^[a-z0-9._:-]{8,128}$/i.test(source.connectionId) ? source.connectionId : "";
+  const account = isPlainObject(source.account) ? {
+    userId: boundedString(source.account.userId, 128),
+    email: boundedString(source.account.email, 320),
+    deviceId: boundedString(source.account.deviceId, 128)
+  } : void 0;
+  const quota = isPlainObject(source.quota) ? {
+    usedTokens: boundedNonNegativeNumberOr(source.quota.usedTokens, 4_000_000_000),
+    tokenCap: boundedNonNegativeNumberOr(source.quota.tokenCap, 4_000_000_000),
+    remainingTokens: boundedNonNegativeNumberOr(source.quota.remainingTokens, 4_000_000_000),
+    limited: source.quota.limited === true,
+    periodEnd: boundedString(source.quota.periodEnd, 64)
+  } : void 0;
+  return {
+    enabled: source.enabled === true && Boolean(apiBaseUrl && installId && connectionId),
+    apiBaseUrl,
+    installId,
+    connectionId,
+    account,
+    quota,
+    syncedEventKeys: normalizeCloudKeyMap(source.syncedEventKeys),
+    syncedClientEventIds: normalizeCloudKeyMap(source.syncedClientEventIds),
+    skippedExpiredEvents: boundedNonNegativeNumberOr(source.skippedExpiredEvents, HISTORY_LIMIT),
+    lastSyncedAt: Number.isFinite(source.lastSyncedAt) ? source.lastSyncedAt : void 0,
+    lastError: boundedString(source.lastError, 240)
+  };
+}
+async function readCloudConfig() {
+  return normalizeCloudConfig(await storageGet(CLOUD_CONFIG_KEY));
+}
+async function writeCloudConfig(config) {
+  const normalized = normalizeCloudConfig(config);
+  await storageSet({ [CLOUD_CONFIG_KEY]: normalized });
+  return normalized;
+}
+async function readCloudAccessToken() {
+  const session = await sessionStorageGet(CLOUD_SESSION_KEY);
+  return isPlainObject(session) && typeof session.accessToken === "string" ? session.accessToken : "";
+}
+function normalizeCloudAccessToken(accessToken) {
+  const token = boundedString(accessToken, 8192).trim();
+  if (token.length < 20 || /[\u0000-\u001f\u007f]/.test(token)) {
+    throw new Error("Enter a valid short-lived OIDC access token.");
+  }
+  return token;
+}
+async function writeCloudAccessToken(accessToken) {
+  const token = normalizeCloudAccessToken(accessToken);
+  await sessionStorageSet({ [CLOUD_SESSION_KEY]: { accessToken: token } });
+}
+function createCloudInstallId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `install-${crypto.randomUUID()}`;
+  }
+  return `install-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
+function createCloudConnectionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `session-${crypto.randomUUID()}`;
+  }
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
+function assertInternalExtensionSender(sender) {
+  const senderUrl = sender?.url ?? sender?.tab?.url;
+  const extensionRoot = chrome.runtime.getURL("");
+  if (typeof senderUrl !== "string" || !senderUrl.startsWith(extensionRoot)) {
+    throw new Error("Cloud account controls are available only from Yor settings.");
+  }
+}
+function cloudDeviceHeaders(config) {
+  const manifest = chrome.runtime.getManifest?.() ?? {};
+  const runtimeNavigator = typeof navigator !== "undefined" ? navigator : {};
+  return {
+    "x-install-id": config.installId,
+    "x-extension-id": chrome.runtime.id,
+    "x-extension-version": boundedString(manifest.version, 64, "unknown"),
+    "x-browser": "chromium",
+    "x-platform": boundedString(runtimeNavigator.userAgentData?.platform ?? runtimeNavigator.platform, 64, "unknown")
+  };
+}
+class CloudRequestError extends Error {
+  constructor(message, statusCode, code) {
+    super(message);
+    this.name = "CloudRequestError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+var cloudConnectionGeneration = 0;
+var activeCloudControllers = /* @__PURE__ */ new Set();
+function cancelActiveCloudRequests() {
+  for (const controller of activeCloudControllers) controller.abort();
+  activeCloudControllers.clear();
+}
+function cloudOperationCancelled() {
+  return new CloudRequestError("Cloud operation was cancelled because the account connection changed.", 409, "cloud_operation_cancelled");
+}
+async function writeCloudConfigForConnection(config, connectionId, generation) {
+  if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
+  const current = await readCloudConfig();
+  if (generation !== cloudConnectionGeneration || !current.enabled || current.connectionId !== connectionId) {
+    throw cloudOperationCancelled();
+  }
+  return writeCloudConfig({ ...config, enabled: true, connectionId });
+}
+async function cloudRequest(config, path, options = {}) {
+  const accessToken = await readCloudAccessToken();
+  if (!accessToken) throw new CloudRequestError("Cloud session expired. Connect again with a fresh access token.", 401, "cloud_session_missing");
+  const controller = new AbortController();
+  activeCloudControllers.add(controller);
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${accessToken}`,
+        ...cloudDeviceHeaders(config),
+        ...(options.body !== void 0 ? { "content-type": "application/json" } : {}),
+        ...(options.headers ?? {})
+      },
+      ...(options.body !== void 0 ? { body: JSON.stringify(options.body) } : {}),
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
+      signal: controller.signal
+    });
+    const responseText = await response.text();
+    let payload;
+    try {
+      payload = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const serverMessage = isPlainObject(payload) ? boundedString(payload.message, 240) : "";
+      const code = isPlainObject(payload) ? boundedString(payload.error, 80) : "";
+      throw new CloudRequestError(serverMessage || `Cloud request failed with status ${response.status}.`, response.status, code || "cloud_request_failed");
+    }
+    return payload;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new CloudRequestError("Cloud request timed out. Local tracking is still active.", 504, "cloud_timeout");
+    }
+    if (error instanceof CloudRequestError) throw error;
+    throw new CloudRequestError("Could not reach the Yor backend. Local tracking is still active.", 503, "cloud_unreachable");
+  } finally {
+    activeCloudControllers.delete(controller);
+    clearTimeout(timeout);
+  }
+}
+async function sha256HexString(value) {
+  const encoded = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+async function toCloudUsageEvent(event) {
+  const clientEventId = `evt_${(await sha256HexString(usageEventIdentity(event))).slice(0, 48)}`;
+  const measurement = normalizeMeasurement(event.measurement, { provider: event.site, model: event.model });
+  return {
+    key: usageEventIdentity(event),
+    clientEventId,
+    payload: {
+      clientEventId,
+      provider: event.site,
+      model: event.model,
+      threadId: event.threadId,
+      occurredAt: new Date(event.timestamp).toISOString(),
+      promptTokens: event.promptTokens,
+      outputTokens: event.outputTokens,
+      totalTokens: event.totalTokens,
+      status: event.status === "rate_limited" ? "RATE_LIMITED" : event.status === "failed" ? "FAILED" : "COMPLETED",
+      accuracy: "ESTIMATED",
+      schemaVersion: measurement.schemaVersion,
+      measurementMethod: measurement.measurementMethod,
+      measurementLevel: measurement.measurementLevel,
+      confidence: measurement.confidence,
+      errorMarginPercent: measurement.errorMarginPercent,
+      tokenizer: measurement.tokenizer,
+      source: measurement.source
+    }
+  };
+}
+function fromCloudUsageEvent(remoteEvent) {
+  if (!isPlainObject(remoteEvent)) return void 0;
+  const timestamp = Date.parse(remoteEvent.occurredAt);
+  if (!Number.isFinite(timestamp)) return void 0;
+  const clientEventId = boundedString(remoteEvent.clientEventId, 128);
+  if (!clientEventId) return void 0;
+  const status = remoteEvent.status === "RATE_LIMITED" ? "rate_limited" : remoteEvent.status === "FAILED" ? "failed" : "completed";
+  const event = normalizeUsageEvent({
+    id: `cloud-${clientEventId}`,
+    site: remoteEvent.provider,
+    model: remoteEvent.model,
+    threadId: remoteEvent.threadId,
+    timestamp,
+    promptTokens: remoteEvent.promptTokens,
+    outputTokens: remoteEvent.outputTokens,
+    totalTokens: remoteEvent.totalTokens,
+    status,
+    promptPreview: "",
+    measurement: {
+      schemaVersion: remoteEvent.schemaVersion,
+      measurementMethod: remoteEvent.measurementMethod,
+      measurementLevel: remoteEvent.measurementLevel,
+      confidence: remoteEvent.confidence,
+      errorMarginPercent: remoteEvent.errorMarginPercent,
+      provider: remoteEvent.provider,
+      model: remoteEvent.model,
+      tokenizer: remoteEvent.tokenizer,
+      source: remoteEvent.source
+    }
+  });
+  return event ? { clientEventId, event } : void 0;
+}
+async function mergeCloudUsageEvents(remoteEvents, config) {
+  const candidates = (Array.isArray(remoteEvents) ? remoteEvents : []).map(fromCloudUsageEvent).filter(Boolean).filter((entry) => {
+    return !Object.prototype.hasOwnProperty.call(config.syncedClientEventIds, entry.clientEventId);
+  });
+  if (!candidates.length) return config;
+  const imported = [];
+  await updateState(async (state) => {
+    const usageEventKeys = state.meta.usageEventKeys ?? {};
+    for (const entry of candidates) {
+      const eventKey = usageEventIdentity(entry.event);
+      config.syncedClientEventIds[entry.clientEventId] = true;
+      if (hasUsageEventKey(usageEventKeys, eventKey)) continue;
+      const appendResult = appendUsageEvent(state.usageEvents, entry.event);
+      if (!appendResult.retained) continue;
+      usageEventKeys[eventKey] = true;
+      for (const evictedEvent of appendResult.evictedEvents) {
+        delete usageEventKeys[usageEventIdentity(evictedEvent)];
+      }
+      state.threads = upsertThread(state.threads, entry.event);
+      config.syncedEventKeys[eventKey] = true;
+      imported.push(eventKey);
+    }
+    state.meta.usageEventKeys = usageEventKeys;
+    return state;
+  });
+  config.syncedEventKeys = normalizeCloudKeyMap(config.syncedEventKeys);
+  config.syncedClientEventIds = normalizeCloudKeyMap(config.syncedClientEventIds);
+  return config;
+}
+async function getCloudStatus() {
+  const [config, accessToken, state] = await Promise.all([readCloudConfig(), readCloudAccessToken(), getState()]);
+  const pendingEvents = config.enabled ? state.usageEvents.filter((event) => {
+    return !Object.prototype.hasOwnProperty.call(config.syncedEventKeys, usageEventIdentity(event));
+  }).length : 0;
+  return {
+    configured: Boolean(config.apiBaseUrl),
+    enabled: config.enabled,
+    connected: Boolean(config.enabled && accessToken),
+    apiBaseUrl: config.apiBaseUrl,
+    account: config.account,
+    quota: config.quota,
+    pendingEvents,
+    skippedExpiredEvents: config.skippedExpiredEvents,
+    lastSyncedAt: config.lastSyncedAt,
+    lastError: config.lastError
+  };
+}
+async function connectCloudSession(apiBaseUrl, accessToken) {
+  const normalizedApiBaseUrl = normalizeCloudBaseUrl(apiBaseUrl);
+  const normalizedAccessToken = normalizeCloudAccessToken(accessToken);
+  const generation = ++cloudConnectionGeneration;
+  cancelActiveCloudRequests();
+  const connectionId = createCloudConnectionId();
+  let config = await readCloudConfig();
+  if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
+  config = await writeCloudConfig({
+    ...config,
+    enabled: true,
+    apiBaseUrl: normalizedApiBaseUrl,
+    installId: config.installId || createCloudInstallId(),
+    connectionId,
+    syncedEventKeys: {},
+    syncedClientEventIds: {},
+    skippedExpiredEvents: 0,
+    account: void 0,
+    quota: void 0,
+    lastSyncedAt: void 0,
+    lastError: ""
+  });
+  try {
+    if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
+    await writeCloudAccessToken(normalizedAccessToken);
+    const session = await cloudRequest(config, "/v1/auth/session");
+    config = await writeCloudConfigForConnection({
+      ...config,
+      account: {
+        userId: session?.user?.id,
+        email: session?.user?.email,
+        deviceId: session?.device?.id
+      },
+      lastError: ""
+    }, connectionId, generation);
+    return getCloudStatus();
+  } catch (error) {
+    const current = await readCloudConfig();
+    if (generation === cloudConnectionGeneration && current.connectionId === connectionId) {
+      await sessionStorageRemove(CLOUD_SESSION_KEY);
+      await writeCloudConfig({ ...current, lastError: boundedString(error?.message, 240) });
+    }
+    throw error;
+  }
+}
+async function disconnectCloudSession() {
+  ++cloudConnectionGeneration;
+  cancelActiveCloudRequests();
+  const config = await readCloudConfig();
+  await sessionStorageRemove(CLOUD_SESSION_KEY);
+  await writeCloudConfig({
+    ...config,
+    enabled: false,
+    connectionId: "",
+    account: void 0,
+    quota: void 0,
+    syncedEventKeys: {},
+    syncedClientEventIds: {},
+    skippedExpiredEvents: 0,
+    lastSyncedAt: void 0,
+    lastError: ""
+  });
+  return getCloudStatus();
+}
+async function recordCloudSyncFailure(error) {
+  const config = await readCloudConfig();
+  if (!config.enabled || error?.code === "cloud_operation_cancelled") return;
+  if (error?.cloudConnectionId && error.cloudConnectionId !== config.connectionId) return;
+  await writeCloudConfig({ ...config, lastError: boundedString(error?.message, 240, "Cloud sync failed.") });
+}
+var cloudSyncQueue = Promise.resolve();
+async function runCloudSync(generation) {
+  let config = await readCloudConfig();
+  const accessToken = await readCloudAccessToken();
+  if (!config.enabled || !accessToken) return getCloudStatus();
+  const connectionId = config.connectionId;
+  try {
+    if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
+    const state = await getState();
+    const cutoff = Date.now() - CLOUD_EVENT_MAX_AGE_MS + 60_000;
+    const eligible = [];
+    for (const event of state.usageEvents) {
+      const eventKey = usageEventIdentity(event);
+      if (Object.prototype.hasOwnProperty.call(config.syncedEventKeys, eventKey)) continue;
+      if (event.timestamp < cutoff) {
+        config.syncedEventKeys[eventKey] = "expired";
+        config.skippedExpiredEvents += 1;
+        continue;
+      }
+      eligible.push(event);
+    }
+    config.syncedEventKeys = normalizeCloudKeyMap(config.syncedEventKeys);
+    config.skippedExpiredEvents = Math.min(HISTORY_LIMIT, config.skippedExpiredEvents);
+    config = await writeCloudConfigForConnection(config, connectionId, generation);
+
+    const maxEvents = CLOUD_MAX_BATCHES_PER_SYNC * 100;
+    const eventsToUpload = eligible.slice(0, maxEvents);
+    for (let offset = 0; offset < eventsToUpload.length; offset += 100) {
+      const localBatch = eventsToUpload.slice(offset, offset + 100);
+      const cloudBatch = await Promise.all(localBatch.map(toCloudUsageEvent));
+      const idempotencyHash = await sha256HexString(cloudBatch.map((entry) => entry.clientEventId).join(":"));
+      await cloudRequest(config, "/v1/usage/events/batch", {
+        method: "POST",
+        headers: { "idempotency-key": `yor-${idempotencyHash}` },
+        body: { events: cloudBatch.map((entry) => entry.payload) }
+      });
+      for (const entry of cloudBatch) {
+        config.syncedEventKeys[entry.key] = true;
+        config.syncedClientEventIds[entry.clientEventId] = true;
+      }
+      config.syncedEventKeys = normalizeCloudKeyMap(config.syncedEventKeys);
+      config.syncedClientEventIds = normalizeCloudKeyMap(config.syncedClientEventIds);
+      config = await writeCloudConfigForConnection(config, connectionId, generation);
+    }
+
+    const remoteState = await cloudRequest(config, "/v1/sync/state", {
+      method: "POST",
+      body: { includeUsage: true, maxEvents: 500 }
+    });
+    if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
+    config = await mergeCloudUsageEvents(remoteState?.usageEvents, config);
+    const quota = await cloudRequest(config, "/v1/quota/check");
+    config = await writeCloudConfigForConnection({
+      ...config,
+      quota: {
+        usedTokens: quota?.usedTokens,
+        tokenCap: quota?.tokenCap,
+        remainingTokens: quota?.remainingTokens,
+        limited: quota?.limited,
+        periodEnd: quota?.periodEnd
+      },
+      lastSyncedAt: Date.now(),
+      lastError: ""
+    }, connectionId, generation);
+    return getCloudStatus();
+  } catch (error) {
+    if (error && typeof error === "object") error.cloudConnectionId = connectionId;
+    throw error;
+  }
+}
+function syncCloudState() {
+  const generation = cloudConnectionGeneration;
+  const operation = cloudSyncQueue.then(() => runCloudSync(generation));
+  cloudSyncQueue = operation.then(() => void 0, () => void 0);
+  return operation;
+}
 
 // src/background/service-worker.ts
 var ALARM_NAME = "yor-token-usage-refresh";
@@ -1230,6 +1806,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await notifyIfNeededFromSession(session);
   }
   await updateBadge();
+  await syncCloudState().catch(recordCloudSyncFailure);
 });
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === "open-dashboard") {
@@ -1243,7 +1820,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
   }
 });
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   void (async () => {
     try {
       switch (message?.type) {
@@ -1261,6 +1838,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           await updateBadge();
           if (recorded && event) {
             await notifyIfNeededFromEvent(event);
+            void syncCloudState().catch(recordCloudSyncFailure);
           }
           sendResponse({ ok: true, snapshot: buildSnapshot(state) });
           break;
@@ -1290,6 +1868,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse(buildSnapshot(state));
           break;
         }
+        case "clear-local-history": {
+          assertInternalExtensionSender(sender);
+          const state = await clearLocalHistory();
+          await updateBadge();
+          sendResponse(buildSnapshot(state));
+          break;
+        }
         case "toggle-overlay": {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           if (tab?.id) {
@@ -1302,6 +1887,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         case "notify": {
           sendResponse(await notify(message.title, message.message));
+          break;
+        }
+        case "cloud-status": {
+          assertInternalExtensionSender(sender);
+          sendResponse({ ok: true, status: await getCloudStatus() });
+          break;
+        }
+        case "cloud-connect": {
+          assertInternalExtensionSender(sender);
+          sendResponse({ ok: true, status: await connectCloudSession(message.payload?.apiBaseUrl, message.payload?.accessToken) });
+          break;
+        }
+        case "cloud-sync": {
+          assertInternalExtensionSender(sender);
+          sendResponse({ ok: true, status: await syncCloudState() });
+          break;
+        }
+        case "cloud-disconnect": {
+          assertInternalExtensionSender(sender);
+          sendResponse({ ok: true, status: await disconnectCloudSession() });
           break;
         }
         default:
