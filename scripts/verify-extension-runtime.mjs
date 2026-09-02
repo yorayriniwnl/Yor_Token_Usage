@@ -153,7 +153,16 @@ const importedEvents = Array.from({ length: 2_505 }, (_, index) => ({
 
 const imported = await dispatch({
   type: "import-data",
-  payload: { usageEvents: importedEvents }
+  payload: {
+    usageEvents: importedEvents,
+    threads: {
+      evil: {
+        site: "chatgpt",
+        model: "<img src=x onerror=alert(1)>",
+        messageCount: "<script>alert(1)</script>"
+      }
+    }
+  }
 });
 if (!imported?.state || imported.state.usageEvents.length !== 2_500) {
   throw new Error("import normalization did not enforce the history limit");
@@ -168,6 +177,9 @@ if (events.at(-1).totalTokens > 4_000_000 || events.at(-1).promptPreview.length 
 }
 if (events.at(-1).measurement?.measurementLevel !== "approximation" || events.at(-1).measurement?.confidence !== 0.51 || events.at(-1).measurement?.errorMarginPercent !== 40) {
   throw new Error("import normalization did not preserve bounded measurement provenance");
+}
+if (Object.prototype.hasOwnProperty.call(imported.state.threads, "evil") || !imported.state.threads["chatgpt:thread-1"]) {
+  throw new Error("thread aggregates trusted imported fields instead of being rebuilt from normalized events");
 }
 const downgradedAuthority = events.find((event) => event.id === "event-6")?.measurement;
 if (downgradedAuthority?.measurementLevel !== "unknown" || downgradedAuthority.confidence !== 0 || downgradedAuthority.errorMarginPercent !== 100) {
@@ -254,7 +266,7 @@ if (!disconnectedDuringConnect?.ok || cancelledReconnect?.ok !== false || status
 }
 
 const cleared = await dispatch({ type: "clear-local-history" }, internalSender);
-if (!cleared?.state || cleared.state.usageEvents.length !== 0 || Object.values(cleared.state.sessions).some(Boolean) || Object.keys(cleared.state.threads).length !== 0 || !cleared.state.preferences) {
+if (!cleared?.state || cleared.state.usageEvents.length !== 0 || Object.values(cleared.state.sessions).some(Boolean) || Object.keys(cleared.state.threads).length !== 0 || !cleared.state.preferences || cleared.analytics?.peakDay !== void 0) {
   throw new Error("local history clear did not remove usage state while preserving preferences");
 }
 

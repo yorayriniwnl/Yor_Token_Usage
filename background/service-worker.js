@@ -539,7 +539,9 @@ function buildAnalytics(events, preferences, now = Date.now()) {
   const byWeek = fillWindow(eightWeeksAgo, 8, 7 * 864e5, weekMap);
   const byModel = aggregateBy(sorted, (event) => event.model, preferences, modelLabelForDisplay);
   const bySite = aggregateBy(sorted, (event) => event.site, preferences, (key) => SITE_LABELS[key] ?? key);
-  const peakDay = [...byDay].sort((a, b) => b.tokens - a.tokens)[0];
+  const peakDay = byDay.some((day) => day.prompts > 0 || day.tokens > 0)
+    ? [...byDay].sort((a, b) => b.tokens - a.tokens)[0]
+    : void 0;
   const averagePromptTokens = average(sorted.map((event) => event.promptTokens));
   const activeDays = byDay.slice(-7).filter((day) => day.prompts > 0 || day.tokens > 0);
   const burnRate = average(activeDays.map((day) => day.tokens));
@@ -1019,9 +1021,6 @@ function rebuildThreads(events, fallbackThreads = {}) {
   }
   return threads;
 }
-function hasStoredThreads(threads) {
-  return Boolean(threads && typeof threads === "object" && !Array.isArray(threads) && Object.keys(threads).length > 0);
-}
 function hydrateState(raw) {
   const preferences = mergePreferences(raw?.preferences);
   const usageEvents = normalizeUsageEvents(raw?.usageEvents);
@@ -1030,7 +1029,7 @@ function hydrateState(raw) {
     preferences,
     sessions: normalizeSessions(raw?.sessions),
     usageEvents,
-    threads: hasStoredThreads(raw?.threads) ? raw.threads : rebuildThreads(usageEvents, {}),
+    threads: rebuildThreads(usageEvents),
     meta: {
       notificationTimestamps: normalizeNotificationTimestamps(raw?.meta?.notificationTimestamps),
       usageEventKeys: normalizeUsageEventKeys(raw?.meta?.usageEventKeys, usageEvents)
