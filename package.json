@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "design:check": "node scripts/check-design.mjs",
-    "accuracy:benchmark": "node scripts/benchmark-accuracy.mjs"
+    "accuracy:benchmark": "node scripts/benchmark-accuracy.mjs",
+    "reset:check": "node scripts/verify-reset-predictor.mjs"
   },
   "devDependencies": {
     "gpt-tokenizer": "4.0.0"
