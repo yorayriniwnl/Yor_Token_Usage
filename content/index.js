@@ -911,6 +911,16 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
     const start = anchor > now ? anchor - 864e5 : anchor;
     return { start, end: start + 864e5 };
   }
+  function getUtcWeeklyWindowBounds(rule, now) {
+    const targetDay = rule.dayOfWeek ?? 1;
+    const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
+    const current = new Date(now);
+    const anchorToday = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
+    const delta = (current.getUTCDay() - targetDay + 7) % 7;
+    let start = anchorToday - delta * 864e5;
+    if (start > now) start -= 7 * 864e5;
+    return { start, end: start + 7 * 864e5 };
+  }
   function getCurrentWindowBounds(rule, now = Date.now()) {
     switch (rule.kind) {
       case "rolling": {
@@ -930,19 +940,7 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
         return getUtcDailyWindowBounds(rule, now);
       }
       case "weekly": {
-        const targetDay = rule.dayOfWeek ?? 1;
-        const start = new Date(now);
-        const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
-        start.setHours(hours, minutes, 0, 0);
-        const currentDay = start.getDay();
-        const delta = (currentDay - targetDay + 7) % 7;
-        start.setDate(start.getDate() - delta);
-        if (start.getTime() > now) {
-          start.setDate(start.getDate() - 7);
-        }
-        const end = new Date(start);
-        end.setDate(end.getDate() + 7);
-        return { start: start.getTime(), end: end.getTime() };
+        return getUtcWeeklyWindowBounds(rule, now);
       }
       case "custom": {
         const intervalMs = (rule.intervalMinutes ?? 1440) * 6e4;

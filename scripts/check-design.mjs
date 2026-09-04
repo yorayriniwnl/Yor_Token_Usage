@@ -23,5 +23,13 @@ if (!manifest.includes("content/accuracy-engine.js")) throw new Error("manifest.
 
 const content = await readFile(new URL("content/index.js", root), "utf8");
 if (!content.includes("YorTokenAccuracy")) throw new Error("content/index.js: provider content is not wired to the shared accuracy engine");
+const weeklyUtcContract = [
+  "function getUtcWeeklyWindowBounds",
+  "current.getUTCDay()",
+  "Date.UTC(current.getUTCFullYear()",
+  'return getUtcWeeklyWindowBounds(rule, now);'
+];
+const missingWeeklyUtcContract = weeklyUtcContract.filter((token) => !content.includes(token));
+if (missingWeeklyUtcContract.length) throw new Error(`content/index.js: weekly reset predictor must stay UTC (${missingWeeklyUtcContract.join(", ")})`);
 
 console.log("YOR design contract: PASS");
