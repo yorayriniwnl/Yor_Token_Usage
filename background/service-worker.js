@@ -710,9 +710,6 @@ function isKnownSite(site) {
 function normalizeSite(site) {
   return isKnownSite(site) ? site : "generic";
 }
-function stringOr(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
 function finiteNumberOr(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
@@ -761,6 +758,93 @@ function normalizeMeasurement(value, fallback = {}) {
     tokenizer: boundedNonEmptyString(raw.tokenizer, 80, base.tokenizer),
     source: boundedNonEmptyString(raw.source, 160, fallback.source ?? base.source),
     note: unverifiedAuthoritativeClaim ? "Provider-authoritative metadata was downgraded until a verified adapter is connected." : boundedNonEmptyString(raw.note, 240, base.note)
+  };
+}
+function normalizePromptSections(value) {
+  const sectionTypes = ["prose", "instruction", "quote", "code", "url", "attachment"];
+  return Array.isArray(value) ? value.slice(0, 50).filter(isPlainObject).map((section) => ({
+    label: boundedNonEmptyString(section.label, 160, "section"),
+    type: sectionTypes.includes(section.type) ? section.type : "prose",
+    tokens: boundedNonNegativeNumberOr(section.tokens, 4_000_000)
+  })) : [];
+}
+function normalizePromptSuggestions(value) {
+  const severities = ["low", "medium", "high"];
+  const variants = ["shorter", "balanced", "maxDetail"];
+  return Array.isArray(value) ? value.slice(0, 6).filter(isPlainObject).map((suggestion, index) => ({
+    id: boundedNonEmptyString(suggestion.id, 64, `suggestion-${index + 1}`),
+    title: boundedNonEmptyString(suggestion.title, 160, "Suggestion"),
+    description: boundedString(suggestion.description, 240),
+    estimatedSavings: boundedNonNegativeNumberOr(suggestion.estimatedSavings, 4_000_000),
+    severity: severities.includes(suggestion.severity) ? suggestion.severity : "low",
+    applyVariant: variants.includes(suggestion.applyVariant) ? suggestion.applyVariant : "balanced"
+  })) : [];
+}
+function normalizePromptTextList(value, maxItems = 6, maxLength = 2_000) {
+  return Array.isArray(value) ? value.slice(0, maxItems).filter((item) => typeof item === "string").map((item) => boundedString(item, maxLength)).filter(Boolean) : [];
+}
+function normalizePromptVariants(value) {
+  const variants = isPlainObject(value) ? value : {};
+  return {
+    shorter: boundedString(variants.shorter, 250_000),
+    balanced: boundedString(variants.balanced, 250_000),
+    maxDetail: boundedString(variants.maxDetail, 250_000)
+  };
+}
+function boundedFutureTimestamp(value, maxFutureDays = 366) {
+  if (!Number.isFinite(value) || value <= 0) return void 0;
+  return Math.min(value, Date.now() + maxFutureDays * 864e5);
+}
+function normalizeSessionResetRule(value) {
+  const raw = isPlainObject(value) ? value : {};
+  const resetKinds = ["rolling", "hourly", "daily", "weekly", "custom", "unknown"];
+  const intervalMinutes = optionalNumberInRange(raw.intervalMinutes, 1, 525600);
+  const dayOfWeek = optionalNumberInRange(raw.dayOfWeek, 0, 6);
+  const anchorLocalTime = typeof raw.anchorLocalTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw.anchorLocalTime) ? raw.anchorLocalTime : void 0;
+  return {
+    kind: resetKinds.includes(raw.kind) ? raw.kind : "unknown",
+    ...(intervalMinutes !== void 0 ? { intervalMinutes } : {}),
+    ...(anchorLocalTime ? { anchorLocalTime } : {}),
+    ...(dayOfWeek !== void 0 ? { dayOfWeek } : {}),
+    inferred: raw.inferred === true,
+    description: boundedString(raw.description, 240)
+  };
+}
+function normalizeResetPrediction(value) {
+  if (!isPlainObject(value)) return void 0;
+  const kinds = ["rolling", "hourly", "daily", "weekly", "custom", "unknown"];
+  const confidences = ["exact", "estimated", "inferred"];
+  const resetAt = boundedFutureTimestamp(value.resetAt);
+  const windowStart = boundedFutureTimestamp(value.windowStart);
+  const windowEnd = boundedFutureTimestamp(value.windowEnd);
+  const remainingMs = Number.isFinite(value.remainingMs) ? clamp(value.remainingMs, 0, 366 * 864e5) : void 0;
+  return {
+    ...(resetAt !== void 0 ? { resetAt } : {}),
+    ...(windowStart !== void 0 ? { windowStart } : {}),
+    ...(windowEnd !== void 0 ? { windowEnd } : {}),
+    ...(remainingMs !== void 0 ? { remainingMs } : {}),
+    localLabel: boundedString(value.localLabel, 160, "Unknown"),
+    kind: kinds.includes(value.kind) ? value.kind : "unknown",
+    confidence: confidences.includes(value.confidence) ? value.confidence : "inferred",
+    explanation: boundedString(value.explanation, 240)
+  };
+}
+function normalizeSessionQuota(value) {
+  const quota = isPlainObject(value) ? value : {};
+  const statuses = ["unknown", "ok", "warning", "limited"];
+  const accuracies = ["exact", "estimated", "inferred"];
+  const nextReset = normalizeResetPrediction(quota.nextReset);
+  const explicitResetAt = boundedFutureTimestamp(quota.explicitResetAt);
+  return {
+    usedTokens: boundedNonNegativeNumberOr(quota.usedTokens, 4_000_000_000),
+    remainingTokens: Number.isFinite(quota.remainingTokens) ? Math.min(4_000_000_000, Math.max(0, quota.remainingTokens)) : void 0,
+    percentUsed: Number.isFinite(quota.percentUsed) ? clamp(quota.percentUsed, 0, 100) : void 0,
+    status: statuses.includes(quota.status) ? quota.status : "unknown",
+    accuracy: accuracies.includes(quota.accuracy) ? quota.accuracy : "inferred",
+    ...(typeof quota.quotaTier === "string" ? { quotaTier: boundedString(quota.quotaTier, 80) } : {}),
+    ...(isPlainObject(quota.resetRule) ? { resetRule: normalizeSessionResetRule(quota.resetRule) } : {}),
+    ...(explicitResetAt !== void 0 ? { explicitResetAt } : {}),
+    ...(nextReset ? { nextReset } : {})
   };
 }
 function timestampOr(value, fallback = Date.now()) {
@@ -852,38 +936,28 @@ function normalizeSession(session) {
   if (!isPlainObject(session)) return void 0;
   const site = normalizeSite(session.site);
   const model = boundedString(session.model, 120, "generic");
-  const defaultAnalysis = defaultPromptAnalysis();
   const currentEstimate = isPlainObject(session.currentEstimate) ? session.currentEstimate : defaultPromptAnalysis();
   const currentThread = isPlainObject(session.currentThread) ? session.currentThread : void 0;
   const quota = isPlainObject(session.quota) ? session.quota : defaultQuotaStatus();
   return {
-    ...session,
     site,
     model,
     threadId: boundedString(session.threadId, 256, "default"),
     currentInput: boundedString(session.currentInput, 250_000),
     currentEstimate: {
-      ...defaultAnalysis,
-      ...currentEstimate,
       inputTokens: boundedNonNegativeNumberOr(currentEstimate.inputTokens, 2_000_000),
       outputTokensEstimate: boundedNonNegativeNumberOr(currentEstimate.outputTokensEstimate, 2_000_000),
       totalTokens: boundedNonNegativeNumberOr(currentEstimate.totalTokens, 4_000_000),
-      sections: Array.isArray(currentEstimate.sections) ? currentEstimate.sections : [],
-      suggestions: Array.isArray(currentEstimate.suggestions) ? currentEstimate.suggestions : [],
-      variants: {
-        ...defaultAnalysis.variants,
-        shorter: stringOr(currentEstimate.variants?.shorter),
-        balanced: stringOr(currentEstimate.variants?.balanced),
-        maxDetail: stringOr(currentEstimate.variants?.maxDetail)
-      },
-      repeatedInstructions: Array.isArray(currentEstimate.repeatedInstructions) ? currentEstimate.repeatedInstructions : [],
-      redundantSections: Array.isArray(currentEstimate.redundantSections) ? currentEstimate.redundantSections : [],
+      sections: normalizePromptSections(currentEstimate.sections),
+      suggestions: normalizePromptSuggestions(currentEstimate.suggestions),
+      variants: normalizePromptVariants(currentEstimate.variants),
+      repeatedInstructions: normalizePromptTextList(currentEstimate.repeatedInstructions),
+      redundantSections: normalizePromptTextList(currentEstimate.redundantSections, 5),
       largePaste: currentEstimate.largePaste === true,
       compressionScore: clamp(nonNegativeNumberOr(currentEstimate.compressionScore), 0, 100),
       measurement: normalizeMeasurement(currentEstimate.measurement, { provider: site, model })
     },
     currentThread: currentThread ? {
-      ...currentThread,
       threadId: boundedString(currentThread.threadId, 256, boundedString(session.threadId, 256, "default")),
       site,
       model: boundedString(currentThread.model, 120, boundedString(session.model, 120, "generic")),
@@ -892,15 +966,9 @@ function normalizeSession(session) {
       outputTokens: boundedNonNegativeNumberOr(currentThread.outputTokens, 8_000_000),
       totalTokens: boundedNonNegativeNumberOr(currentThread.totalTokens, 16_000_000),
       lastUpdated: timestampOr(currentThread.lastUpdated),
-      contextGrowth: Array.isArray(currentThread.contextGrowth) ? currentThread.contextGrowth.filter(Number.isFinite).map((value) => boundedNonNegativeNumberOr(value, 16_000_000)).slice(-25) : []
+      contextGrowth: Array.isArray(currentThread.contextGrowth) ? currentThread.contextGrowth.slice(-25).filter(Number.isFinite).map((value) => boundedNonNegativeNumberOr(value, 16_000_000)) : []
     } : void 0,
-    quota: {
-      ...defaultQuotaStatus(),
-      ...quota,
-      usedTokens: boundedNonNegativeNumberOr(quota.usedTokens, 4_000_000_000),
-      remainingTokens: Number.isFinite(quota.remainingTokens) ? Math.min(4_000_000_000, Math.max(0, quota.remainingTokens)) : void 0,
-      percentUsed: Number.isFinite(quota.percentUsed) ? clamp(quota.percentUsed, 0, 100) : void 0
-    },
+    quota: normalizeSessionQuota(quota),
     lastUpdated: timestampOr(session.lastUpdated),
     lastSeenUrl: boundedString(session.lastSeenUrl, 2_048),
     adapterConfidence: clamp(finiteNumberOr(session.adapterConfidence, 0), 0, 1)

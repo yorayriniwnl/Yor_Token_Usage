@@ -155,6 +155,42 @@ const imported = await dispatch({
   type: "import-data",
   payload: {
     usageEvents: importedEvents,
+    sessions: {
+      chatgpt: {
+        site: "chatgpt",
+        model: "gpt-4.1",
+        threadId: "thread-1",
+        currentInput: "normal prompt",
+        currentEstimate: {
+          inputTokens: 42,
+          outputTokensEstimate: 18,
+          totalTokens: 60,
+          sections: Array.from({ length: 60 }, (_, index) => ({ type: "not-a-real-section", label: `<script>${index}</script>`, tokens: Number.MAX_VALUE, evil: true })),
+          suggestions: Array.from({ length: 10 }, (_, index) => ({ id: `suggestion-${index}`, title: `<img src=x onerror=alert(1)>`, description: "x".repeat(500), estimatedSavings: Number.MAX_VALUE, severity: "not-a-severity", applyVariant: "not-a-variant", evil: true })),
+          variants: { shorter: "x".repeat(251_000), balanced: "balanced", maxDetail: "detail" },
+          repeatedInstructions: Array.from({ length: 10 }, () => "repeated instruction"),
+          redundantSections: Array.from({ length: 10 }, () => "redundant section"),
+          evil: "must-not-persist"
+        },
+        currentThread: {
+          contextGrowth: Array.from({ length: 100 }, (_, index) => index),
+          evil: "must-not-persist"
+        },
+        quota: {
+          status: "not-a-status",
+          accuracy: "not-an-accuracy",
+          nextReset: {
+            localLabel: "<script>alert(1)</script>".repeat(100),
+            kind: "not-a-kind",
+            confidence: "not-a-confidence",
+            explanation: "x".repeat(500),
+            evil: true
+          },
+          evil: "must-not-persist"
+        },
+        evil: "must-not-persist"
+      }
+    },
     threads: {
       evil: {
         site: "chatgpt",
@@ -180,6 +216,16 @@ if (events.at(-1).measurement?.measurementLevel !== "approximation" || events.at
 }
 if (Object.prototype.hasOwnProperty.call(imported.state.threads, "evil") || !imported.state.threads["chatgpt:thread-1"]) {
   throw new Error("thread aggregates trusted imported fields instead of being rebuilt from normalized events");
+}
+const importedSession = imported.state.sessions.chatgpt;
+if (!importedSession || Object.prototype.hasOwnProperty.call(importedSession, "evil") || Object.prototype.hasOwnProperty.call(importedSession.currentEstimate, "evil") || Object.prototype.hasOwnProperty.call(importedSession.currentThread, "evil") || Object.prototype.hasOwnProperty.call(importedSession.quota, "evil")) {
+  throw new Error("session normalization persisted unknown imported fields");
+}
+if (importedSession.currentEstimate.sections.length !== 50 || importedSession.currentEstimate.suggestions.length !== 6 || importedSession.currentEstimate.repeatedInstructions.length !== 6 || importedSession.currentEstimate.redundantSections.length !== 5 || importedSession.currentThread.contextGrowth.length !== 25 || importedSession.currentEstimate.variants.shorter.length !== 250_000) {
+  throw new Error("session normalization did not bound nested analysis data");
+}
+if (importedSession.currentEstimate.sections.some((section) => section.type !== "prose" || section.tokens !== 4_000_000) || importedSession.currentEstimate.suggestions.some((suggestion) => suggestion.severity !== "low" || suggestion.applyVariant !== "balanced" || suggestion.estimatedSavings !== 4_000_000) || importedSession.quota.status !== "unknown" || importedSession.quota.accuracy !== "inferred" || importedSession.quota.nextReset.kind !== "unknown" || importedSession.quota.nextReset.confidence !== "inferred" || importedSession.quota.nextReset.localLabel.length > 160 || importedSession.quota.nextReset.explanation.length > 240) {
+  throw new Error("session normalization did not constrain nested imported values");
 }
 const downgradedAuthority = events.find((event) => event.id === "event-6")?.measurement;
 if (downgradedAuthority?.measurementLevel !== "unknown" || downgradedAuthority.confidence !== 0 || downgradedAuthority.errorMarginPercent !== 100) {
