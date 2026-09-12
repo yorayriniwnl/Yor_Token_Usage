@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { getOverlayPosition } = require("../content/overlay-position.js");
+const { applyOverlayPosition, getOverlayPosition } = require("../content/overlay-position.js");
 
 const belowPosition = getOverlayPosition(
   { left: 100, top: 400, right: 500, bottom: 440, width: 400, height: 40 },
@@ -25,5 +25,18 @@ const abovePosition = getOverlayPosition(
   { width: 250, height: 60 }
 );
 assert.deepEqual(abovePosition, { left: 100, top: 652, placement: "above" });
+
+const positionedElement = { style: {}, dataset: {} };
+const appliedPosition = applyOverlayPosition(
+  positionedElement,
+  { left: 100, top: 400, right: 500, bottom: 440, width: 400, height: 40 },
+  { width: 1280, height: 800 },
+  { width: 250, height: 44 }
+);
+assert.deepEqual(appliedPosition, belowPosition);
+assert.equal(positionedElement.style.left, "100px");
+assert.equal(positionedElement.style.top, "448px");
+assert.equal(positionedElement.style.right, "auto");
+assert.equal(positionedElement.dataset.placement, "below");
 
 console.log("overlay-window-check=pass");

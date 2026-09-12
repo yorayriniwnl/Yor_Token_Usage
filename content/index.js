@@ -1564,19 +1564,16 @@ button:focus-visible {
       const anchor = this.callbacks.getAnchor?.();
       const meter = this.refs.pageMeter;
       const positioner = globalThis.YorOverlayPosition;
-      if (!anchor || !meter || !positioner?.getOverlayPosition) return;
+      if (!anchor || !meter || !positioner?.applyOverlayPosition) return;
       const anchorRect = anchor.getBoundingClientRect?.();
       if (!anchorRect) return;
       const meterRect = meter.getBoundingClientRect();
-      const position = positioner.getOverlayPosition(
+      positioner.applyOverlayPosition(
+        meter,
         anchorRect,
         { width: window.innerWidth, height: window.innerHeight },
         { width: meterRect.width || 280, height: meterRect.height || 44 }
       );
-      meter.style.left = `${position.left}px`;
-      meter.style.top = `${position.top}px`;
-      meter.style.right = "auto";
-      meter.dataset.placement = position.placement;
     }
     toggleCollapsed() {
       this.collapsed = !this.collapsed;
