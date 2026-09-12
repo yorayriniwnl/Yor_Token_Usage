@@ -28,3 +28,19 @@ test("quota limit allows usage when total account usage is below token cap", () 
   assert.equal(remainingTokens, 55_000);
   assert.equal(scopedUsedTokens, 12_000);
 });
+
+test("non-completed events (FAILED and RATE_LIMITED) do not contribute to consumed tokens", () => {
+  const events = [
+    { totalTokens: 500, status: "COMPLETED" },
+    { totalTokens: 1000, status: "FAILED" },
+    { totalTokens: 2000, status: "RATE_LIMITED" },
+    { totalTokens: 300, status: "COMPLETED" }
+  ];
+
+  const completedTokens = events
+    .filter((e) => e.status === "COMPLETED")
+    .reduce((sum, e) => sum + e.totalTokens, 0);
+
+  assert.equal(completedTokens, 800);
+});
+

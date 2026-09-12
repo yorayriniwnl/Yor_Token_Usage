@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addUtcMonths, resolveQuotaPeriod, startOfUtcMonth } from "../src/services/quotaPolicy.js";
+import { addUtcMonths, resolveProviderWindow, resolveQuotaPeriod, startOfUtcMonth } from "../src/services/quotaPolicy.js";
 
 test("resolves active subscription period for monthly quota", () => {
   const start = new Date("2026-03-15T12:00:00.000Z");
@@ -38,3 +38,27 @@ test("adds UTC months without overflowing short months", () => {
   assert.equal(startOfUtcMonth(new Date("2026-04-25T20:30:00.000Z")).toISOString(), "2026-04-01T00:00:00.000Z");
   assert.equal(addUtcMonths(new Date("2026-01-31T00:00:00.000Z"), 1).toISOString(), "2026-02-28T00:00:00.000Z");
 });
+
+test("resolves ChatGPT rolling 3-hour window", () => {
+  const now = new Date("2026-04-25T14:00:00.000Z");
+  const earliestEvent = new Date("2026-04-25T12:30:00.000Z");
+
+  const window = resolveProviderWindow("chatgpt", now, earliestEvent);
+  assert.equal(window.windowType, "rolling");
+  assert.equal(window.windowMinutes, 180);
+  assert.equal(window.windowStart.toISOString(), "2026-04-25T11:00:00.000Z");
+  assert.equal(window.windowEnd.toISOString(), "2026-04-25T14:00:00.000Z");
+  // Reset predicted 3 hours after earliest event in window
+  assert.equal(window.predictedResetAt.toISOString(), "2026-04-25T15:30:00.000Z");
+});
+
+test("resolves Claude rolling 5-hour window", () => {
+  const now = new Date("2026-04-25T15:00:00.000Z");
+
+  const window = resolveProviderWindow("claude", now);
+  assert.equal(window.windowType, "rolling");
+  assert.equal(window.windowMinutes, 300);
+  assert.equal(window.windowStart.toISOString(), "2026-04-25T10:00:00.000Z");
+  assert.equal(window.windowEnd.toISOString(), "2026-04-25T15:00:00.000Z");
+});
+

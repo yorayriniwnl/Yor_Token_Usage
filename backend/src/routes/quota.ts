@@ -4,8 +4,9 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { modelSchema, providerSchema } from "../schemas/common.js";
+import { calculateCost } from "../services/pricing.js";
 import { resolveEntitlement } from "../services/plans.js";
-import { resolveQuotaPeriod } from "../services/quotaPolicy.js";
+import { resolveProviderWindow, resolveQuotaPeriod } from "../services/quotaPolicy.js";
 
 const quotaQuerySchema = z.object({
   provider: providerSchema.optional(),
@@ -37,8 +38,13 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
 
       const period = resolveQuotaPeriod(subscription, now);
       const isFiltered = Boolean(query.provider || query.model);
+      const providerName = query.provider ?? "generic";
+      const modelName = query.model ?? "generic";
+
+      // Filter to COMPLETED events so failed/rate-limited queries don't inflate usage
       const accountUsageWhere: Prisma.UsageEventWhereInput = {
         userId: request.auth!.userId,
+        status: "COMPLETED",
         occurredAt: { gte: period.start, lt: period.end }
       };
       const scopedUsageWhere: Prisma.UsageEventWhereInput = {
@@ -54,15 +60,25 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
         ...(query.model ? { model: query.model } : {})
       };
 
-      const [accountUsage, scopedUsage, windows] = await Promise.all([
+      // Provider rolling window (ChatGPT 3h, Claude 5h, Daily)
+      const initialWindow = resolveProviderWindow(providerName, now);
+      const rollingUsageWhere: Prisma.UsageEventWhereInput = {
+        userId: request.auth!.userId,
+        status: "COMPLETED",
+        occurredAt: { gte: initialWindow.windowStart, lte: now },
+        ...(query.provider ? { provider: query.provider } : {}),
+        ...(query.model ? { model: query.model } : {})
+      };
+
+      const [accountUsage, scopedUsage, windows, rollingUsage, earliestRollingEvent] = await Promise.all([
         app.prisma.usageEvent.aggregate({
           where: accountUsageWhere,
-          _sum: { totalTokens: true }
+          _sum: { totalTokens: true, promptTokens: true, outputTokens: true }
         }),
         isFiltered
           ? app.prisma.usageEvent.aggregate({
               where: scopedUsageWhere,
-              _sum: { totalTokens: true }
+              _sum: { totalTokens: true, promptTokens: true, outputTokens: true }
             })
           : Promise.resolve(null),
         app.prisma.quotaWindow.findMany({
@@ -78,6 +94,16 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
             promptCount: true,
             status: true
           }
+        }),
+        app.prisma.usageEvent.aggregate({
+          where: rollingUsageWhere,
+          _sum: { totalTokens: true, promptTokens: true, outputTokens: true },
+          _count: { id: true }
+        }),
+        app.prisma.usageEvent.findFirst({
+          where: rollingUsageWhere,
+          orderBy: { occurredAt: "asc" },
+          select: { occurredAt: true }
         })
       ]);
 
@@ -87,12 +113,50 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       const remainingTokens = Math.max(0, tokenCap - accountUsedTokens);
       const limited = accountUsedTokens >= tokenCap;
 
+      // Real-world pricing & costs
+      const accountCost = calculateCost(
+        accountUsage._sum.promptTokens ?? 0,
+        accountUsage._sum.outputTokens ?? 0,
+        modelName,
+        providerName
+      );
+      const scopedCost = isFiltered && scopedUsage
+        ? calculateCost(
+            scopedUsage._sum.promptTokens ?? 0,
+            scopedUsage._sum.outputTokens ?? 0,
+            modelName,
+            providerName
+          )
+        : accountCost;
+
+      const exactProviderWindow = resolveProviderWindow(providerName, now, earliestRollingEvent?.occurredAt);
+      const rollingCost = calculateCost(
+        rollingUsage._sum.promptTokens ?? 0,
+        rollingUsage._sum.outputTokens ?? 0,
+        modelName,
+        providerName
+      );
+
       return {
         usedTokens: scopedUsedTokens,
         ...(isFiltered ? { accountUsedTokens } : {}),
         tokenCap,
         remainingTokens,
         limited,
+        totalCost: accountCost.totalCost,
+        scopedCost: scopedCost.totalCost,
+        providerWindow: {
+          provider: exactProviderWindow.provider,
+          windowType: exactProviderWindow.windowType,
+          windowMinutes: exactProviderWindow.windowMinutes,
+          windowStart: exactProviderWindow.windowStart,
+          windowEnd: exactProviderWindow.windowEnd,
+          predictedResetAt: exactProviderWindow.predictedResetAt,
+          tokensUsed: rollingUsage._sum.totalTokens ?? 0,
+          promptsCount: rollingUsage._count.id ?? 0,
+          estimatedCost: rollingCost.totalCost,
+          description: exactProviderWindow.description
+        },
         usageAccuracy: "estimated",
         usageBasis: "server-recorded event totals; no provider billing counter is connected",
         periodStart: period.start,

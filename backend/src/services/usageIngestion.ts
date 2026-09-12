@@ -7,6 +7,7 @@ type InsertedUsageRow = {
   model: string;
   occurred_at: Date;
   total_tokens: number;
+  status: "COMPLETED" | "RATE_LIMITED" | "FAILED";
 };
 
 function startOfUtcDay(date: Date): Date {
@@ -99,11 +100,12 @@ export async function processUsageBatch(prisma: PrismaClient, job: unknown): Pro
         ${row.metadata ? JSON.stringify(row.metadata) : null}::jsonb
       )`))}
       ON CONFLICT (user_id, client_event_id) DO NOTHING
-      RETURNING provider, model, occurred_at, total_tokens
+      RETURNING provider, model, occurred_at, total_tokens, status
     `);
 
     const groups = new Map<string, { provider: string; model: string; windowStart: Date; tokens: number; count: number }>();
     for (const row of inserted) {
+      if (row.status !== "COMPLETED") continue;
       const windowStart = startOfUtcDay(row.occurred_at);
       const key = `${row.provider}:${row.model}:${windowStart.toISOString()}`;
       const existing = groups.get(key) ?? {
