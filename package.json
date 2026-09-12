@@ -4,7 +4,8 @@
   "scripts": {
     "design:check": "node scripts/check-design.mjs",
     "accuracy:benchmark": "node scripts/benchmark-accuracy.mjs",
-    "reset:check": "node scripts/verify-reset-predictor.mjs"
+    "reset:check": "node scripts/verify-reset-predictor.mjs",
+    "overlay:check": "node scripts/verify-overlay-window.mjs"
   },
   "devDependencies": {
     "gpt-tokenizer": "4.0.0"

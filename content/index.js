@@ -1238,28 +1238,39 @@ button:focus-visible {
   --dur-fast: 150ms;
   --dur-med: 220ms;
 }
-.yor-page-meter {
+.yor-usage-window {
   position: fixed;
   top: 96px;
   left: 88px;
-  max-width: min(760px, calc(100vw - 130px));
-  border: 0;
-  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: min(430px, calc(100vw - 24px));
+  border: 1px solid rgba(244,241,234,0.15);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(15, 15, 17, 0.94);
+  backdrop-filter: blur(14px);
   color: rgba(244,241,234,0.74);
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 11px;
   line-height: 1.25;
-  padding: 0;
   text-align: left;
   pointer-events: auto;
   text-shadow: 0 1px 2px rgba(0,0,0,0.55);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.32);
   animation: yor-fade-in var(--dur-med) var(--ease-out) both;
-  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
-.yor-page-meter:hover { opacity: 0.92; transform: translateY(-1px); }
-.yor-page-meter strong { color: #2f9cf5; font-weight: 760; }
-.yor-page-meter span + span { margin-left: 8px; }
+.yor-usage-window:hover { opacity: 0.96; transform: translateY(-1px); border-color: rgba(244,241,234,0.28); }
+.yor-usage-window:active { transform: translateY(0); }
+.yor-usage-item { display: grid; gap: 2px; min-width: 52px; }
+.yor-usage-label { color: rgba(244,241,234,0.52); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; }
+.yor-usage-value { color: #fffaf2; font-size: 12px; font-weight: 760; white-space: nowrap; }
+.yor-usage-item:first-child .yor-usage-value { color: #2f9cf5; }
+.yor-usage-divider { width: 1px; height: 26px; background: rgba(244,241,234,0.12); flex: 0 0 auto; }
 .yor-card {
   width: 100%;
   min-width: 0;
@@ -1362,7 +1373,7 @@ button:focus-visible {
 }
 @media (min-width: 320px) and (max-width: 768px) {
   .yor-root { right: 10px; left: 10px; width: auto; min-width: 0; bottom: 10px; }
-  .yor-page-meter { top: 70px; left: 14px; right: 14px; max-width: none; font-size: 12px; }
+  .yor-usage-window { top: 70px; left: 14px; right: 14px; max-width: none; width: auto; justify-content: space-between; }
   .yor-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .yor-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .yor-row { grid-template-columns: 72px minmax(0, 1fr); }
@@ -1414,9 +1425,21 @@ button:focus-visible {
       const template = document.createElement("template");
       template.innerHTML = `
       <div class="yor-root" data-ref="root">
-        <button class="yor-page-meter" data-action="toggle" data-ref="pageMeter" title="Open Yor Token Usage details">
-          <span>Length*: <strong data-ref="meterLength"></strong> tokens</span>
-          <span>| Cost: <strong data-ref="meterCost"></strong> credits</span>
+        <button class="yor-usage-window" data-action="toggle" data-ref="pageMeter" title="Open Yor Token Usage details">
+          <span class="yor-usage-item">
+            <span class="yor-usage-label">Usage</span>
+            <strong class="yor-usage-value" data-ref="meterPercent"></strong>
+          </span>
+          <span class="yor-usage-divider" aria-hidden="true"></span>
+          <span class="yor-usage-item">
+            <span class="yor-usage-label">Tokens</span>
+            <strong class="yor-usage-value" data-ref="meterTokens"></strong>
+          </span>
+          <span class="yor-usage-divider" aria-hidden="true"></span>
+          <span class="yor-usage-item">
+            <span class="yor-usage-label">Reset</span>
+            <strong class="yor-usage-value" data-ref="meterReset"></strong>
+          </span>
         </button>
         <div class="yor-card yor-hidden" data-ref="card">
           <div class="yor-head">
@@ -1535,6 +1558,25 @@ button:focus-visible {
       const shouldShow = value && Boolean(this.state);
       this.container.style.display = shouldShow ? "" : "none";
       this.setHidden("root", !shouldShow);
+      if (shouldShow) this.positionBelowAnchor();
+    }
+    positionBelowAnchor() {
+      const anchor = this.callbacks.getAnchor?.();
+      const meter = this.refs.pageMeter;
+      const positioner = globalThis.YorOverlayPosition;
+      if (!anchor || !meter || !positioner?.getOverlayPosition) return;
+      const anchorRect = anchor.getBoundingClientRect?.();
+      if (!anchorRect) return;
+      const meterRect = meter.getBoundingClientRect();
+      const position = positioner.getOverlayPosition(
+        anchorRect,
+        { width: window.innerWidth, height: window.innerHeight },
+        { width: meterRect.width || 280, height: meterRect.height || 44 }
+      );
+      meter.style.left = `${position.left}px`;
+      meter.style.top = `${position.top}px`;
+      meter.style.right = "auto";
+      meter.dataset.placement = position.placement;
     }
     toggleCollapsed() {
       this.collapsed = !this.collapsed;
@@ -1630,8 +1672,9 @@ button:focus-visible {
       this.setHidden("pageMeter", !this.collapsed);
       this.setHidden("card", this.collapsed);
       this.setHidden("body", this.collapsed);
-      this.setText("meterLength", formatInteger(lengthTokens));
-      this.setText("meterCost", formatInteger(creditEstimate));
+      this.setText("meterPercent", formatPercent(state.quota.percentUsed));
+      this.setText("meterTokens", formatTokens(state.quota.usedTokens));
+      this.setText("meterReset", resetMs !== void 0 ? formatDuration(resetMs) : state.quota.nextReset?.localLabel ?? "Unknown");
       this.setText("status", statusText);
       this.setText("meta", `${SITE_LABELS[state.site] ?? state.site} \u00b7 ${state.model || "Unknown model"} \u00b7 ${contextLabel}`);
       this.setText("quickLength", `Length*: ${formatInteger(lengthTokens)} tokens`);
@@ -1689,6 +1732,7 @@ button:focus-visible {
       }) : [this.listItem(hasDraft ? "No high-impact reductions found for this draft." : "No draft to optimize yet.")]);
       this.setDisabled("copyShorterButton", !hasDraft);
       this.setDisabled("replacePromptButton", !hasDraft);
+      this.positionBelowAnchor();
     }
   };
 
@@ -1710,6 +1754,7 @@ button:focus-visible {
     let latestOverlayState;
     let pendingPrompt;
     const overlay = new OverlayWidget({
+      getAnchor: () => adapter.getComposer(),
       onCopySummary: async (state) => {
         const targetState = state ?? latestOverlayState;
         if (!targetState) return;
@@ -1739,6 +1784,9 @@ button:focus-visible {
       onToggle: () => void 0
     });
     overlay.setVisible(overlayEnabled);
+    const repositionOverlay = () => overlay.positionBelowAnchor();
+    window.addEventListener("resize", repositionOverlay, { passive: true });
+    window.addEventListener("scroll", repositionOverlay, { capture: true, passive: true });
     const renderOverlayState = (session, conversation, messages, snapshot = snapshotCache) => {
       const sitePreferencesForSession = preferences.sites[adapter.site] ?? DEFAULT_PREFERENCES.sites[adapter.site];
       const lastEvent = snapshot?.analytics?.timeline?.find((event) => event.site === adapter.site) ?? snapshot?.analytics?.timeline?.[0];
@@ -1998,6 +2046,7 @@ button:focus-visible {
             registerPendingPrompt();
           }
         });
+        overlay.positionBelowAnchor();
       }
       const sendButton = adapter.getSendButton();
       if (sendButton && sendButton !== boundSendButton) {

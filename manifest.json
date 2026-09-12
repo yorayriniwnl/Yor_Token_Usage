@@ -51,7 +51,7 @@
         "https://grok.com/*",
         "https://x.com/i/grok*"
       ],
-      "js": ["content/accuracy-engine.js", "content/index.js"],
+      "js": ["content/accuracy-engine.js", "content/overlay-position.js", "content/index.js"],
       "run_at": "document_idle"
     }
   ],
