@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $scriptDir
 $extensionPaths = @(
@@ -51,7 +54,7 @@ $files = foreach ($extensionPath in $extensionPaths) {
   }
 }
 $files = $files | Sort-Object {
-  [System.IO.Path]::GetRelativePath($root, $_.FullName).Replace("\", "/")
+  $_.FullName.Substring($root.Length).TrimStart('\', '/').Replace("\", "/")
 }
 
 $fixedTimestamp = [System.DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [System.TimeSpan]::Zero)
@@ -69,7 +72,7 @@ $archive = [System.IO.Compression.ZipArchive]::new(
 
 try {
   foreach ($file in $files) {
-    $entryName = [System.IO.Path]::GetRelativePath($root, $file.FullName).Replace("\", "/")
+    $entryName = $file.FullName.Substring($root.Length).TrimStart('\', '/').Replace("\", "/")
     $entry = $archive.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
     $entry.LastWriteTime = $fixedTimestamp
     $entry.ExternalAttributes = 0
