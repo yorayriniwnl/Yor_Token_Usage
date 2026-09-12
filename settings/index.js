@@ -295,16 +295,21 @@ function collectPreferences(snapshot) {
     const card = document.querySelector(`.site-card[data-site="${site}"]`);
     const resetKind = card.querySelector('[data-key="resetKind"]').value;
     const currentSiteSettings = next.sites[site] ?? DEFAULT_PREFERENCES.sites[site];
+    const resetRule = {
+      kind: resetKind,
+      intervalMinutes: readNumber(card.querySelector('[data-key="intervalMinutes"]').value),
+      anchorLocalTime: card.querySelector('[data-key="anchorLocalTime"]').value,
+      dayOfWeek: readNumber(card.querySelector('[data-key="dayOfWeek"]').value)
+    };
+    const displayedRule = { ...currentSiteSettings.resetRule, anchorLocalTime: currentSiteSettings.resetRule?.anchorLocalTime ?? "00:00", dayOfWeek: currentSiteSettings.resetRule?.dayOfWeek ?? 1 };
+    const resetChanged = Object.entries(resetRule).some(([key, value]) => (value ?? "") !== (displayedRule[key] ?? ""));
     next.sites[site] = {
       ...currentSiteSettings,
       enabled: card.querySelector('[data-key="enabled"]').checked,
       resetRule: {
-        kind: resetKind,
-        intervalMinutes: readNumber(card.querySelector('[data-key="intervalMinutes"]').value),
-        anchorLocalTime: card.querySelector('[data-key="anchorLocalTime"]').value,
-        dayOfWeek: readNumber(card.querySelector('[data-key="dayOfWeek"]').value),
-        inferred: true,
-        description: currentSiteSettings.resetRule?.description
+        ...resetRule,
+        inferred: resetChanged ? false : currentSiteSettings.resetRule?.inferred !== false,
+        description: resetChanged ? "User-configured schedule estimate; not a verified provider reset." : currentSiteSettings.resetRule?.description
       },
       tokenBudget: readNumber(card.querySelector('[data-key="tokenBudget"]').value),
       contextWindow: readNumber(card.querySelector('[data-key="contextWindow"]').value),

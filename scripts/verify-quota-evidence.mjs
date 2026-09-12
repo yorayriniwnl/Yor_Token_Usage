@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import vm from "node:vm";
+
+const source = await readFile(new URL("../content/index.js", import.meta.url), "utf8");
+const api = vm.runInNewContext(source.replace("  var adapter = getAdapterForCurrentSite();", "return { parseQuotaHintsFromText, predictReset, computeQuotaStatus, SelectorSiteAdapter };\n  var adapter = getAdapterForCurrentSite();"), { Date, structuredClone, Intl });
+const hints = api.parseQuotaHintsFromText;
+assert.equal(hints("12 messages remaining").remainingTokens, undefined, "messages are not tokens");
+assert.equal(hints("80% remaining").percentUsed, 20, "remaining percentage must be inverted");
+assert.equal(hints("180% used").percentUsed, undefined, "reject invalid percentages");
+assert.equal(hints("Usage limit: 80% used").status, undefined, "mentioning a limit is not hitting it");
+assert.equal(hints("You have reached your usage limit. Try again in 2 hours 32 minutes.").status, "limited");
+const now = Date.now();
+assert.ok(Math.abs(hints("Resets in 2h 32m").resetAt - now - 9120000) < 1000, "parse entire compound duration");
+assert.equal(hints("An appointment in 2 hours").resetAt, undefined, "unrelated time is not a quota reset");
+assert.equal(hints("12.5 tokens remaining").remainingTokens, undefined, "never parse a decimal suffix as tokens");
+const inferred = api.predictReset({ now, rule: { kind: "daily", inferred: true, anchorLocalTime: "00:00" } });
+assert.equal(inferred.resetAt, undefined, "legacy guessed schedules must not invent a reset");
+const configured = api.predictReset({ now, rule: { kind: "daily", inferred: false, anchorLocalTime: "00:00" } });
+assert.ok(configured.resetAt > now, "preserve explicitly configured schedules");
+assert.equal(configured.confidence, "estimated");
+const explicit = api.computeQuotaStatus({ now, events: [], explicitResetAt: now + 60000 });
+assert.notEqual(explicit.accuracy, "exact", "a reset signal does not make estimated token usage exact");
+assert.equal(api.predictReset({ now, explicitResetAt: now - 1 }).resetAt, undefined);
+console.log("quota-evidence-check=pass");

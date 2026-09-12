@@ -22,6 +22,11 @@ if ($manifest.manifest_version -ne 3) {
   throw "Expected a Manifest V3 extension"
 }
 
+foreach ($check in @("verify-quota-evidence.mjs", "verify-overlay-window.mjs", "verify-reset-predictor.mjs")) {
+  node (Join-Path $scriptDir $check)
+  if ($LASTEXITCODE -ne 0) { throw "Regression check failed: $check" }
+}
+
 node (Join-Path $scriptDir "verify-extension-runtime.mjs")
 if ($LASTEXITCODE -ne 0) {
   throw "Extension runtime normalization check failed"

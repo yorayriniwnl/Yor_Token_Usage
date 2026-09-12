@@ -82,6 +82,14 @@ jobs:
         run: npm run design:check
       - name: Run accuracy calibration regression
         run: npm run accuracy:benchmark
+      - name: Install Chromium for extension regressions
+        run: npx playwright install --with-deps chromium
+      - name: Verify unpacked extension in Chromium (controlled provider fixture)
+        run: npm run browser:check
+      - name: Verify normal-motion layout
+        run: npm run browser:check
+        env:
+          YOR_TEST_MOTION: normal
       - name: Validate and package extension
         shell: pwsh
         run: ./scripts/verify-extension.ps1 -Output "$env:RUNNER_TEMP/yor-token-usage-chrome.zip"

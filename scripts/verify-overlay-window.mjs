@@ -39,4 +39,13 @@ assert.equal(positionedElement.style.top, "448px");
 assert.equal(positionedElement.style.right, "auto");
 assert.equal(positionedElement.dataset.placement, "below");
 
+const blocked = getOverlayPosition(
+  { left: 12, top: 12, bottom: 788 }, { width: 1280, height: 800 }, { width: 300, height: 60 }
+);
+assert.equal(blocked.placement, "hidden", "never clamp the widget over the input when no space exists");
+const offscreen = getOverlayPosition(
+  { left: 12, top: -100, bottom: -50 }, { width: 1280, height: 800 }, { width: 300, height: 60 }
+);
+assert.equal(offscreen.placement, "hidden", "hide when composer is offscreen");
+
 console.log("overlay-window-check=pass");

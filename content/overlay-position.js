@@ -22,13 +22,15 @@
     const gap = Math.max(0, finite(options.gap, DEFAULT_GAP));
     const width = Math.max(0, finite(overlay?.width, 0));
     const height = Math.max(0, finite(overlay?.height, 0));
-    const viewportWidth = Math.max(width + padding * 2, finite(viewport?.width, width + padding * 2));
-    const viewportHeight = Math.max(height + padding * 2, finite(viewport?.height, height + padding * 2));
+    const viewportWidth = Math.max(0, finite(viewport?.width, 0));
+    const viewportHeight = Math.max(0, finite(viewport?.height, 0));
     const left = clamp(finite(anchor?.left, padding), padding, Math.max(padding, viewportWidth - width - padding));
     const belowTop = finite(anchor?.bottom, padding) + gap;
     const aboveTop = finite(anchor?.top, padding) - gap - height;
-    const fitsBelow = belowTop + height <= viewportHeight - padding;
-    const fitsAbove = aboveTop >= padding;
+    const anchorVisible = anchor?.bottom > 0 && anchor?.top < viewportHeight;
+    const fitsWidth = width <= viewportWidth - padding * 2;
+    const fitsBelow = anchorVisible && fitsWidth && belowTop >= padding && belowTop + height <= viewportHeight - padding;
+    const fitsAbove = anchorVisible && fitsWidth && aboveTop >= padding && aboveTop + height <= viewportHeight - padding;
 
     if (fitsBelow) {
       return { left, top: belowTop, placement: "below" };
@@ -39,7 +41,7 @@
     return {
       left,
       top: clamp(belowTop, padding, Math.max(padding, viewportHeight - height - padding)),
-      placement: "below"
+      placement: "hidden"
     };
   }
 
@@ -47,8 +49,12 @@
     const position = getOverlayPosition(anchor, viewport, overlay, options);
     if (element?.style) {
       element.style.left = `${position.left}px`;
-      element.style.top = `${position.top}px`;
+      // Anchor the facing edge so wrapping/scrollbars cannot grow into the composer.
+      element.style.top = position.placement === "above" ? "auto" : `${position.top}px`;
+      element.style.bottom = position.placement === "above"
+        ? `${viewport.height - anchor.top + Math.max(0, finite(options?.gap, DEFAULT_GAP))}px` : "auto";
       element.style.right = "auto";
+      element.style.visibility = position.placement === "hidden" ? "hidden" : "";
     }
     if (element?.dataset) element.dataset.placement = position.placement;
     return position;

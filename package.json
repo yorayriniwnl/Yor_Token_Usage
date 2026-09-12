@@ -5,9 +5,12 @@
     "design:check": "node scripts/check-design.mjs",
     "accuracy:benchmark": "node scripts/benchmark-accuracy.mjs",
     "reset:check": "node scripts/verify-reset-predictor.mjs",
-    "overlay:check": "node scripts/verify-overlay-window.mjs"
+    "overlay:check": "node scripts/verify-overlay-window.mjs",
+    "quota:check": "node scripts/verify-quota-evidence.mjs",
+    "browser:check": "node scripts/verify-overlay-browser.cjs"
   },
   "devDependencies": {
-    "gpt-tokenizer": "4.0.0"
+    "gpt-tokenizer": "4.0.0",
+    "playwright": "^1.62.1"
   }
 }

@@ -884,7 +884,7 @@ function mergeSiteSettings(site, partialSite) {
       ...(intervalMinutes !== void 0 ? { intervalMinutes } : {}),
       ...(anchorLocalTime ? { anchorLocalTime } : {}),
       ...(dayOfWeek !== void 0 ? { dayOfWeek } : {}),
-      inferred: true,
+      inferred: partialResetRule.inferred !== false,
       description: typeof partialResetRule.description === "string" ? partialResetRule.description.slice(0, 240) : defaults.resetRule.description
     }
   };

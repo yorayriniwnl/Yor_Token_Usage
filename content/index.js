@@ -120,6 +120,11 @@
     return value.replace(/\s+/g, " ").replace(/\bnew\b/gi, "").trim().slice(0, 80) || void 0;
   }
   function parseRelativeReset(text) {
+    const durationMatch = text.match(/(?:\bin\b|\bafter\b)\s*:?[ \t]*(?:(\d+)\s*(?:hours?|hrs?|h)\b)?\s*(?:(\d+)\s*(?:minutes?|mins?|m)\b)?/i);
+    if (durationMatch && (durationMatch[1] || durationMatch[2])) {
+      const duration = Number(durationMatch[1] || 0) * 36e5 + Number(durationMatch[2] || 0) * 6e4;
+      if (duration > 0) return Date.now() + duration;
+    }
     const minutesMatch = text.match(/(?:in|after)\s+(\d+)\s+minutes?/i);
     if (minutesMatch) {
       return Date.now() + Number.parseInt(minutesMatch[1], 10) * 6e4;
@@ -146,15 +151,16 @@
   function parseQuotaHintsFromText(text) {
     const normalized = text.replace(/\s+/g, " ").trim();
     if (!normalized) return {};
-    const limited = /(?:usage|rate|message|token) limit|too many requests|try again later|quota/i.test(normalized);
-    const remainingMatch = normalized.match(/(\d[\d,]*)\s+(?:tokens|messages)\s+remaining/i);
-    const percentMatch = normalized.match(/(\d{1,3})\s*%\s*(?:used|remaining)/i);
+    const limited = /(?:reached|exceeded|hit)[^.]*\b(?:limit|quota)\b|too many requests|try again later|(?:limit|quota)\s+(?:reached|exceeded)/i.test(normalized);
+    const remainingMatch = normalized.match(/(?<![\d.,])(\d+(?:,\d{3})*)\s+tokens\s+remaining/i);
+    const percentMatch = normalized.match(/(?<![\d.])(\d{1,3}(?:\.\d+)?)\s*%\s*(used|remaining)/i);
+    const percentage = percentMatch ? Number(percentMatch[1]) : undefined;
     const tierMatch = normalized.match(/\b(plus|pro|advanced|premium|free)\b/i);
     return {
-      resetAt: parseRelativeReset(normalized),
+      resetAt: /\bresets?\b|\btry again\b/i.test(normalized) ? parseRelativeReset(normalized) : void 0,
       rateLimitMessage: limited ? normalized.slice(0, 220) : void 0,
       remainingTokens: remainingMatch ? Number.parseInt(remainingMatch[1].replace(/,/g, ""), 10) : void 0,
-      percentUsed: percentMatch ? Number.parseInt(percentMatch[1], 10) : void 0,
+      percentUsed: percentage <= 100 ? (percentMatch[2].toLowerCase() === "remaining" ? 100 - percentage : percentage) : void 0,
       quotaTier: tierMatch?.[1] ? tierMatch[1][0].toUpperCase() + tierMatch[1].slice(1).toLowerCase() : void 0,
       status: limited ? "limited" : void 0,
       confidence: limited || remainingMatch || percentMatch ? 0.72 : 0.2
@@ -182,6 +188,21 @@
     }
     getComposer() {
       return queryFirst(this.config.composer);
+    }
+    getComposerSurface() {
+      const composer = this.getComposer();
+      if (!composer) return null;
+      // Position against the entire input surface, including its toolbar/footer.
+      const surface = composer.closest('form, [data-testid="composer"], [data-testid="chat-input"], [data-composer]');
+      if (surface) return surface;
+      let result = composer;
+      const inputRect = composer.getBoundingClientRect();
+      for (let node = composer.parentElement, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+        const rect = node.getBoundingClientRect();
+        if (node.matches('main, section, body') || rect.height > Math.max(240, inputRect.height + 160)) break;
+        result = node;
+      }
+      return result;
     }
     readComposerText() {
       const composer = this.getComposer();
@@ -264,9 +285,19 @@
       });
     }
     getQuotaHints() {
-      const alertNodes = queryAll(this.config.alert);
+      const alertNodes = queryAll(this.config.alert).filter((node) =>
+        node.getClientRects().length > 0 &&
+        !node.closest('.yor-token-usage-root, [contenteditable="true"]') &&
+        !closestSelectorMatches(node, [...this.config.userMessage, ...this.config.assistantMessage])
+      );
       const text = alertNodes.map((node) => textFromNode(node)).join(" \u2022 ");
-      return parseQuotaHintsFromText(text || document.body.innerText.slice(0, 2e3));
+      // Never interpret conversation prose or another extension's footer as account data.
+      // Anchor a relative countdown once; polling identical text must not postpone it.
+      if (this.quotaHintText !== text) {
+        this.quotaHintText = text;
+        this.quotaHints = parseQuotaHintsFromText(text);
+      }
+      return this.quotaHints ?? {};
     }
   };
 
@@ -962,9 +993,12 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
         windowEnd: explicitResetAt,
         localLabel: formatDateTime(explicitResetAt),
         kind: rule.kind,
-        confidence: "exact",
-        explanation: "Detected from the site UI or a rate-limit message."
+        confidence: "estimated",
+        explanation: "Parsed from a visible UI alert; not verified against provider account data."
       };
+    }
+    if (rule.inferred) {
+      return { localLabel: "Unknown", kind: "unknown", confidence: "inferred", explanation: "Provider reset unavailable. Default schedules are not evidence of an account reset." };
     }
     switch (rule.kind) {
       case "rolling": {
@@ -1043,7 +1077,7 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
         status = "ok";
       }
     }
-    const accuracy = options.explicitResetAt ? "exact" : prediction.confidence;
+    const accuracy = "estimated";
     return {
       usedTokens,
       remainingTokens,
@@ -1168,20 +1202,8 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
       maximumFractionDigits: 0
     }).format(Math.max(0, Math.round(value || 0)));
   }
-  function estimatedCreditWeight(site, model) {
-    const label = `${site} ${model ?? ""}`.toLowerCase();
-    if (label.includes("claude") || label.includes("sonnet") || label.includes("opus") || label.includes("haiku")) return 5;
-    if (label.includes("gpt") || label.includes("openai")) return 4;
-    if (label.includes("gemini")) return 4;
-    return 3;
-  }
   function activeLengthTokens(state) {
     return (state.conversation?.totalTokens ?? 0) + (state.currentInput?.trim() ? state.analysis.inputTokens : 0);
-  }
-  function activeCreditEstimate(state) {
-    const outputWeight = estimatedCreditWeight(state.site, state.model);
-    const draftInput = state.currentInput?.trim() ? state.analysis.inputTokens : 0;
-    return (state.conversation?.promptTokens ?? 0) + draftInput + (state.conversation?.outputTokens ?? 0) * outputWeight;
   }
   function buildOverlaySummary(state) {
     const lastUser = lastByRole(state.messages ?? [], "user");
@@ -1194,9 +1216,9 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
       `Draft output estimate: ${formatTokens(state.analysis.outputTokensEstimate)}`,
       `Thread total: ${formatTokens(state.conversation.totalTokens)}`,
       `Thread messages: ${state.messages?.length ?? 0}`,
-      `Current window used: ${formatTokens(state.quota.usedTokens)}`,
+      `Locally captured tokens (estimated): ${formatTokens(state.quota.usedTokens)}`,
       `Quota: ${state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.remainingTokens)} remaining` : state.quota.percentUsed !== void 0 ? formatPercent(state.quota.percentUsed) : "budget not set"}`,
-      `Reset: ${state.quota.nextReset?.localLabel ?? "unknown"}`,
+      `Reset estimate: ${state.quota.nextReset?.localLabel ?? "unknown"}`,
       `Today: ${formatTokens(state.summary?.tokensToday ?? 0)}`,
       `7-day total: ${formatTokens(state.summary?.tokensThisWeek ?? 0)}`,
       `Last captured exchange: ${lastEvent ? `${formatTokens(lastEvent.totalTokens)} on ${formatShortTime(lastEvent.timestamp)}` : "none"}`,
@@ -1267,20 +1289,24 @@ button:focus-visible {
 .yor-usage-window:hover { opacity: 0.96; transform: translateY(-1px); border-color: rgba(244,241,234,0.28); }
 .yor-usage-window:active { transform: translateY(0); }
 .yor-usage-item { display: grid; gap: 2px; min-width: 52px; }
-.yor-usage-label { color: rgba(244,241,234,0.52); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; }
-.yor-usage-value { color: #fffaf2; font-size: 12px; font-weight: 760; white-space: nowrap; }
+.yor-usage-label { color: rgba(244,241,234,0.72); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+.yor-usage-value { color: #fffaf2; font-size: 13px; font-weight: 760; white-space: nowrap; }
 .yor-usage-item:first-child .yor-usage-value { color: #2f9cf5; }
+.yor-usage-item { min-width: 0; }
+.yor-usage-value { white-space: normal; overflow-wrap: anywhere; }
 .yor-usage-divider { width: 1px; height: 26px; background: rgba(244,241,234,0.12); flex: 0 0 auto; }
 .yor-card {
+  position: fixed;
+  max-width: min(430px, calc(100vw - 24px));
   width: 100%;
   min-width: 0;
   border-radius: 8px;
-  overflow: hidden;
+  overflow: auto;
   background: rgba(15, 15, 17, 0.97);
   backdrop-filter: blur(18px);
   border: 1px solid rgba(244, 241, 234, 0.16);
   box-shadow: 0 22px 60px rgba(0,0,0,0.52);
-  animation: yor-rise-in var(--dur-med) var(--ease-out) both;
+  animation: yor-fade-in var(--dur-med) var(--ease-out) both;
 }
 .yor-head {
   display: flex;
@@ -1314,7 +1340,7 @@ button:focus-visible {
 }
 .yor-quickline strong { color:#fffaf2; font-size: 13px; }
 .yor-quickline span { white-space:nowrap; }
-.yor-body { padding: 12px; display: grid; gap: 11px; max-height: min(70vh, 650px); overflow-y: auto; overscroll-behavior: contain; }
+.yor-body { padding: 12px; display: grid; gap: 11px; }
 .yor-body::-webkit-scrollbar { width: 10px; }
 .yor-body::-webkit-scrollbar-thumb {
   background: rgba(244,241,234,0.18);
@@ -1356,10 +1382,6 @@ button:focus-visible {
   flex: 0 0 auto;
 }
 .yor-hidden { display:none; }
-@keyframes yor-rise-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.992); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
 @keyframes yor-list-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1383,10 +1405,9 @@ button:focus-visible {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+    animation: none !important;
     scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
+    transition: none !important;
   }
 }
 `;
@@ -1427,17 +1448,17 @@ button:focus-visible {
       <div class="yor-root" data-ref="root">
         <button class="yor-usage-window" data-action="toggle" data-ref="pageMeter" title="Open Yor Token Usage details">
           <span class="yor-usage-item">
-            <span class="yor-usage-label">Usage</span>
+            <span class="yor-usage-label" data-ref="meterQuotaLabel">YOR · Quota</span>
             <strong class="yor-usage-value" data-ref="meterPercent"></strong>
           </span>
           <span class="yor-usage-divider" aria-hidden="true"></span>
           <span class="yor-usage-item">
-            <span class="yor-usage-label">Tokens</span>
+            <span class="yor-usage-label">Visible tokens ≈</span>
             <strong class="yor-usage-value" data-ref="meterTokens"></strong>
           </span>
           <span class="yor-usage-divider" aria-hidden="true"></span>
           <span class="yor-usage-item">
-            <span class="yor-usage-label">Reset</span>
+            <span class="yor-usage-label">Reset estimate</span>
             <strong class="yor-usage-value" data-ref="meterReset"></strong>
           </span>
         </button>
@@ -1464,7 +1485,7 @@ button:focus-visible {
                 <span class="yor-stat-note" data-ref="draftNote"></span>
               </div>
               <div class="yor-stat">
-                <span class="yor-stat-label">Window</span>
+                <span class="yor-stat-label">Captured ≈</span>
                 <span class="yor-stat-value" data-ref="quotaValue"></span>
                 <span class="yor-stat-note" data-ref="quotaNote"></span>
               </div>
@@ -1562,11 +1583,20 @@ button:focus-visible {
     }
     positionBelowAnchor() {
       const anchor = this.callbacks.getAnchor?.();
-      const meter = this.refs.pageMeter;
+      const meter = this.collapsed ? this.refs.pageMeter : this.refs.card;
       const positioner = globalThis.YorOverlayPosition;
-      if (!anchor || !meter || !positioner?.applyOverlayPosition) return;
+      if (!meter || !positioner?.applyOverlayPosition) return;
+      meter.style.visibility = anchor ? "" : "hidden";
+      if (!anchor) return;
       const anchorRect = anchor.getBoundingClientRect?.();
       if (!anchorRect) return;
+      // Clear the previous viewport's constraints before measuring responsive wrapping.
+      Object.assign(meter.style, { left: "12px", right: "auto", top: "0px", bottom: "auto", maxWidth: `${Math.max(0, window.innerWidth - 24)}px` });
+      if (!this.collapsed) {
+        meter.style.width = `${Math.min(430, Math.max(0, window.innerWidth - 24))}px`;
+        const availableHeight = Math.max(anchorRect.top - 20, window.innerHeight - anchorRect.bottom - 20);
+        meter.style.maxHeight = `${Math.max(0, availableHeight)}px`;
+      }
       const meterRect = meter.getBoundingClientRect();
       positioner.applyOverlayPosition(
         meter,
@@ -1653,29 +1683,30 @@ button:focus-visible {
       const measurementMargin = Number.isFinite(measurement.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}%` : "No bound";
       const hasDraft = Boolean(state.currentInput?.trim()) || state.analysis.inputTokens > 0;
       const statusText = state.quota.status === "limited" ? "Limited" : state.quota.status === "warning" ? "Near limit" : percent === void 0 && state.quota.remainingTokens === void 0 ? "Budget not set" : state.quota.accuracy === "exact" ? "Provider signal" : "Estimated";
-      const quotaPrimary = state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.remainingTokens)} left` : percent !== void 0 ? formatPercent(percent) : `${formatTokens(state.quota.usedTokens)} used`;
-      const quotaNote = state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.usedTokens)} used this window` : percent !== void 0 ? `${formatTokens(state.quota.usedTokens)} used this window` : "Set a token budget in settings";
+      const quotaPrimary = state.quota.usedTokens > 0 ? `~${formatTokens(state.quota.usedTokens)}` : "No captures";
+      const quotaNote = "Local captures only; not account usage.";
       const quotaBarPercent = percent ?? (state.sitePreferences?.tokenBudget ? clamp(state.quota.usedTokens / Math.max(1, state.sitePreferences.tokenBudget) * 100, 0, 100) : 0);
       const contextWindow = state.contextWindow ?? resolveModelContextWindow(state.model, state.site);
       const contextPercent = contextWindow ? clamp(state.conversation.totalTokens / Math.max(1, contextWindow) * 100, 0, 100) : void 0;
       const lastEvent = state.lastEvent;
       const recentLabel = lastEvent ? `${formatTokens(lastEvent.promptTokens)} in / ${formatTokens(lastEvent.outputTokens)} out` : "No captured exchanges";
-      const resetLabel = resetMs !== void 0 ? formatDuration(resetMs) : "Unknown";
+      const resetLabel = resetMs !== void 0 ? `~${formatDuration(resetMs)}` : "Unknown";
       const lengthTokens = activeLengthTokens(state);
-      const creditEstimate = activeCreditEstimate(state);
       const contextLabel = contextPercent !== void 0 ? `${formatPercent(contextPercent)} context` : "context unknown";
       this.container.style.display = this.visible ? "" : "none";
       this.setHidden("root", !this.visible);
       this.setHidden("pageMeter", !this.collapsed);
       this.setHidden("card", this.collapsed);
       this.setHidden("body", this.collapsed);
-      this.setText("meterPercent", formatPercent(state.quota.percentUsed));
-      this.setText("meterTokens", formatTokens(state.quota.usedTokens));
-      this.setText("meterReset", resetMs !== void 0 ? formatDuration(resetMs) : state.quota.nextReset?.localLabel ?? "Unknown");
+      this.setText("meterQuotaLabel", state.sitePreferences?.tokenBudget !== void 0 ? "YOR · Budget" : "YOR · Quota");
+      this.setText("meterPercent", percent !== void 0 ? `~${formatPercent(percent)}` : "Unknown");
+      this.setText("meterTokens", messages.length || hasDraft ? formatTokens(lengthTokens) : "Not detected");
+      this.setText("meterReset", resetLabel);
+      this.refs.pageMeter.title = "YOR: visible thread + draft token estimate, not account usage. Quota/reset are unavailable unless detected or configured. Open details.";
       this.setText("status", statusText);
       this.setText("meta", `${SITE_LABELS[state.site] ?? state.site} \u00b7 ${state.model || "Unknown model"} \u00b7 ${contextLabel}`);
-      this.setText("quickLength", `Length*: ${formatInteger(lengthTokens)} tokens`);
-      this.setText("quickCost", `Cost: ${formatInteger(creditEstimate)} credits`);
+      this.setText("quickLength", `Visible thread + draft: ~${formatInteger(lengthTokens)} tokens`);
+      this.setText("quickCost", "Provider credits and account usage unavailable");
       this.setText("toggleButton", this.collapsed ? "Open" : "Hide");
       if (this.refs.toggleButton) {
         this.refs.toggleButton.title = this.collapsed ? "Open details" : "Hide details";
@@ -1687,7 +1718,7 @@ button:focus-visible {
       this.setText("threadValue", formatTokens(state.conversation.totalTokens));
       this.setText("threadNote", `${messages.length} messages detected`);
       this.setText("resetValue", resetLabel);
-      this.setText("resetNote", state.quota.nextReset?.localLabel ?? "Schedule estimate");
+      this.setText("resetNote", state.quota.nextReset?.explanation ?? "Provider reset unavailable");
       this.setText("quotaPressure", percent !== void 0 ? formatPercent(percent) : "No percent");
       this.setWidth("quotaBar", Math.min(100, Math.max(quotaBarPercent, quotaBarPercent > 0 ? 4 : 0)));
       this.setText("contextPressure", contextPercent !== void 0 ? `${formatPercent(contextPercent)} of ${formatTokens(contextWindow)}` : "Unknown");
@@ -1751,7 +1782,7 @@ button:focus-visible {
     let latestOverlayState;
     let pendingPrompt;
     const overlay = new OverlayWidget({
-      getAnchor: () => adapter.getComposer(),
+      getAnchor: () => adapter.getComposerSurface(),
       onCopySummary: async (state) => {
         const targetState = state ?? latestOverlayState;
         if (!targetState) return;
