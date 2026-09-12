@@ -1539,6 +1539,8 @@ async function toCloudUsageEvent(event) {
       promptTokens: event.promptTokens,
       outputTokens: event.outputTokens,
       totalTokens: event.totalTokens,
+      promptText: event.promptText,
+      responseText: event.responseText,
       status: event.status === "rate_limited" ? "RATE_LIMITED" : event.status === "failed" ? "FAILED" : "COMPLETED",
       accuracy: "ESTIMATED",
       schemaVersion: measurement.schemaVersion,

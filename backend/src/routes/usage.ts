@@ -118,6 +118,8 @@ export async function usageRoutes(app: FastifyInstance): Promise<void> {
           promptTokens: event.promptTokens,
           outputTokens: event.outputTokens,
           totalTokens: event.totalTokens,
+          ...(event.promptText ? { promptText: event.promptText } : {}),
+          ...(event.responseText ? { responseText: event.responseText } : {}),
           ...(event.promptHash ? { promptHash: event.promptHash } : {}),
           status: event.status,
           accuracy: event.accuracy,

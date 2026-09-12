@@ -130,6 +130,8 @@ model UsageEvent {
   promptTokens       Int              @map("prompt_tokens")
   outputTokens       Int              @map("output_tokens")
   totalTokens        Int              @map("total_tokens")
+  promptText         String?          @map("prompt_text")
+  responseText       String?          @map("response_text")
   promptHash         String?          @map("prompt_hash")
   status             UsageEventStatus @default(COMPLETED)
   accuracy           Accuracy         @default(ESTIMATED)
