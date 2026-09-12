@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
+import { verifyDeviceNotRevoked } from "../services/devices.js";
 import { decodeUsageCursor, encodeUsageCursor } from "../services/syncPagination.js";
 
 const syncBodySchema = z.object({
@@ -22,6 +23,7 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
       ]
     },
     async (request, reply) => {
+      await verifyDeviceNotRevoked(request);
       const body = syncBodySchema.parse(request.body ?? {});
       const settings = await app.prisma.userSettings.findUnique({
         where: { userId: request.auth!.userId }

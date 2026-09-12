@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { requireAuth } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { settingsUpdateSchema } from "../schemas/settings.js";
+import { verifyDeviceNotRevoked } from "../services/devices.js";
 
 const userLimiter = rateLimit({
   scope: "settings",
@@ -13,6 +14,7 @@ const userLimiter = rateLimit({
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/v1/settings", { preHandler: [requireAuth, userLimiter] }, async (request) => {
+    await verifyDeviceNotRevoked(request);
     const settings = await app.prisma.userSettings.findUnique({
       where: { userId: request.auth!.userId }
     });
@@ -27,6 +29,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.put("/v1/settings", { preHandler: [requireAuth, userLimiter] }, async (request, reply) => {
+    await verifyDeviceNotRevoked(request);
     const body = settingsUpdateSchema.parse(request.body);
     const payload = body.payload as Prisma.InputJsonObject;
     const userId = request.auth!.userId;

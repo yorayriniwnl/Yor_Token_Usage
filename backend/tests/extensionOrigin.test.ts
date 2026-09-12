@@ -8,7 +8,12 @@ test("extension origin canonicalization matches browser Origin headers", () => {
     "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
   );
   assert.equal(
+    canonicalizeExtensionOrigin("chrome-extension://abcdefghijklmnopabcdefghijklmnop///"),
+    "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+  );
+  assert.equal(
     canonicalizeExtensionOrigin(" chrome-extension://abcdefghijklmnopabcdefghijklmnop "),
     "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
   );
 });
+

@@ -36,9 +36,13 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const period = resolveQuotaPeriod(subscription, now);
-      const usageWhere: Prisma.UsageEventWhereInput = {
+      const isFiltered = Boolean(query.provider || query.model);
+      const accountUsageWhere: Prisma.UsageEventWhereInput = {
         userId: request.auth!.userId,
-        occurredAt: { gte: period.start, lt: period.end },
+        occurredAt: { gte: period.start, lt: period.end }
+      };
+      const scopedUsageWhere: Prisma.UsageEventWhereInput = {
+        ...accountUsageWhere,
         ...(query.provider ? { provider: query.provider } : {}),
         ...(query.model ? { model: query.model } : {})
       };
@@ -50,11 +54,17 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
         ...(query.model ? { model: query.model } : {})
       };
 
-      const [usage, windows] = await Promise.all([
+      const [accountUsage, scopedUsage, windows] = await Promise.all([
         app.prisma.usageEvent.aggregate({
-          where: usageWhere,
+          where: accountUsageWhere,
           _sum: { totalTokens: true }
         }),
+        isFiltered
+          ? app.prisma.usageEvent.aggregate({
+              where: scopedUsageWhere,
+              _sum: { totalTokens: true }
+            })
+          : Promise.resolve(null),
         app.prisma.quotaWindow.findMany({
           where: quotaWhere,
           orderBy: [{ windowStart: "desc" }, { usedTokens: "desc" }],
@@ -71,14 +81,18 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
         })
       ]);
 
-      const usedTokens = usage._sum.totalTokens ?? 0;
+      const accountUsedTokens = accountUsage._sum.totalTokens ?? 0;
+      const scopedUsedTokens = scopedUsage ? (scopedUsage._sum.totalTokens ?? 0) : accountUsedTokens;
       const tokenCap = Math.max(0, plan.monthlyTokenCap);
+      const remainingTokens = Math.max(0, tokenCap - accountUsedTokens);
+      const limited = accountUsedTokens >= tokenCap;
 
       return {
-        usedTokens,
+        usedTokens: scopedUsedTokens,
+        ...(isFiltered ? { accountUsedTokens } : {}),
         tokenCap,
-        remainingTokens: Math.max(0, tokenCap - usedTokens),
-        limited: usedTokens >= tokenCap,
+        remainingTokens,
+        limited,
         usageAccuracy: "estimated",
         usageBasis: "server-recorded event totals; no provider billing counter is connected",
         periodStart: period.start,

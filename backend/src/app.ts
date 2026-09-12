@@ -3,6 +3,7 @@ import helmet from "@fastify/helmet";
 import sensible from "@fastify/sensible";
 import Fastify from "fastify";
 import { env, allowedExtensionOrigins } from "./config/env.js";
+import { canonicalizeExtensionOrigin } from "./config/origins.js";
 import { startIdempotencyCleanup } from "./jobs/idempotencyCleanup.js";
 import { createUsageQueue } from "./jobs/usageQueue.js";
 import { prisma } from "./lib/prisma.js";
@@ -48,7 +49,7 @@ export async function buildApp() {
         callback(null, false);
         return;
       }
-      callback(null, allowedExtensionOrigins.includes(origin));
+      callback(null, allowedExtensionOrigins.includes(canonicalizeExtensionOrigin(origin)));
     },
     methods: ["GET", "POST", "PUT", "OPTIONS"],
     allowedHeaders: [

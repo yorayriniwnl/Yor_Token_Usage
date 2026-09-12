@@ -48,14 +48,24 @@ function fieldsToObject(fields: string[]): Record<string, string> {
   return output;
 }
 
+const activeRetryTimers = new Set<NodeJS.Timeout>();
+
 async function requeueOrDeadLetter(id: string, payload: UsageBatchJob, error: unknown): Promise<void> {
   const attempts = (payload.attempts ?? 0) + 1;
   if (attempts >= MAX_ATTEMPTS) {
     await deadLetter(id, payload, error);
   } else {
     const retryDelay = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempts - 1));
-    await sleep(retryDelay);
-    await redis.xadd(STREAM, "*", "payload", JSON.stringify({ ...payload, attempts }));
+    const timer = setTimeout(async () => {
+      activeRetryTimers.delete(timer);
+      try {
+        await redis.xadd(STREAM, "*", "payload", JSON.stringify({ ...payload, attempts }));
+      } catch (err) {
+        console.error({ id, error: err }, "failed to requeue retry job");
+      }
+    }, retryDelay);
+    timer.unref();
+    activeRetryTimers.add(timer);
     await redis.xack(STREAM, GROUP, id);
   }
 }
@@ -170,6 +180,10 @@ const shutdown = async (signal: string): Promise<void> => {
   if (shuttingDown) return;
   shuttingDown = true;
   console.info({ signal }, "usage worker shutting down");
+  for (const timer of activeRetryTimers) {
+    clearTimeout(timer);
+  }
+  activeRetryTimers.clear();
   await Promise.allSettled([redis.quit(), prisma.$disconnect()]);
   process.exit(0);
 };
