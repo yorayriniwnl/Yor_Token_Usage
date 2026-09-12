@@ -21,9 +21,10 @@ var MODEL_CATALOG = {
     label: "Generic model",
     contextWindow: 128e3
   },
+  /* NOTE: gpt-5.5, gpt-5.4*, claude-opus-4.7, claude-sonnet-4.6 are forward-looking placeholders with unverified pricing. */
   "gpt-5.5": {
     id: "gpt-5.5",
-    label: "GPT-5.5",
+    label: "GPT-5.5 (Unverified)",
     contextWindow: 1e6,
     estimatedInputCostPer1k: 5e-3,
     estimatedOutputCostPer1k: 0.03,
@@ -119,7 +120,7 @@ var MODEL_CATALOG = {
   },
   "claude-opus-4.7": {
     id: "claude-opus-4.7",
-    label: "Claude Opus 4.7",
+    label: "Claude Opus 4.7 (Unverified)",
     contextWindow: 1e6,
     estimatedInputCostPer1k: 5e-3,
     estimatedOutputCostPer1k: 0.025,
@@ -151,7 +152,7 @@ var MODEL_CATALOG = {
   },
   "claude-sonnet-4.6": {
     id: "claude-sonnet-4.6",
-    label: "Claude Sonnet 4.6",
+    label: "Claude Sonnet 4.6 (Unverified)",
     contextWindow: 1e6,
     estimatedInputCostPer1k: 3e-3,
     estimatedOutputCostPer1k: 0.015,
@@ -465,8 +466,15 @@ function eventCost(event, preferences) {
 }
 function fillWindow(start, count, stepMs, values) {
   return Array.from({ length: count }, (_, index) => {
-    const timestamp = start + index * stepMs;
-    const key = toDateKey(timestamp);
+    const d = new Date(start);
+    if (stepMs === 864e5) {
+      d.setDate(d.getDate() + index);
+    } else if (stepMs === 7 * 864e5) {
+      d.setDate(d.getDate() + index * 7);
+    } else {
+      d.setTime(start + index * stepMs);
+    }
+    const key = toDateKey(d.getTime());
     return values.get(key) ?? { date: key, tokens: 0, prompts: 0, cost: 0 };
   });
 }
@@ -516,8 +524,12 @@ function detectTokenAnomalies(events, preferences) {
 }
 function buildAnalytics(events, preferences, now = Date.now()) {
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
-  const fourteenDaysAgo = startOfLocalDay(now - 13 * 864e5);
-  const eightWeeksAgo = startOfLocalWeek(now - 7 * 7 * 864e5);
+  const dDay = new Date(now);
+  dDay.setDate(dDay.getDate() - 13);
+  const fourteenDaysAgo = startOfLocalDay(dDay.getTime());
+  const dWeek = new Date(now);
+  dWeek.setDate(dWeek.getDate() - 7 * 7);
+  const eightWeeksAgo = startOfLocalWeek(dWeek.getTime());
   const dayMap = /* @__PURE__ */ new Map();
   const weekMap = /* @__PURE__ */ new Map();
   for (const event of sorted) {
@@ -1224,7 +1236,7 @@ function upsertThread(threads, event) {
       outputTokens: existing.outputTokens + event.outputTokens,
       totalTokens,
       lastUpdated: Math.max(existing.lastUpdated, event.timestamp),
-      contextGrowth: [...existing.contextGrowth.slice(-24), totalTokens]
+      contextGrowth: [...existing.contextGrowth.slice(-24), event.totalTokens]
     }
   };
 }

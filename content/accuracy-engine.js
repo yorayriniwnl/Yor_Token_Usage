@@ -126,7 +126,7 @@
       return {
         label: sectionLabel(description, "attachment"),
         type: "attachment",
-        tokens: Math.ceil(description.length / 7 + (attachment.sizeBytes ? attachment.sizeBytes / 65536 : 0) + (attachment.pages ?? 0) * 18),
+        tokens: Math.ceil(description.length / 7 + (attachment.sizeBytes ? attachment.sizeBytes / 4 : 0) + (attachment.pages ?? 0) * 18),
         start: 0,
         end: description.length
       };
@@ -141,8 +141,8 @@
     const conciseBoost = ["brief", "concise", "short answer", "one paragraph", "one sentence"]
       .filter((needle) => normalized.includes(needle)).length;
     const codeBoost = normalized.includes("```") || normalized.includes("typescript") || normalized.includes("javascript") || normalized.includes("python") ? 0.35 : 0;
-    const ratio = clamp(0.75 + detailBoost * 0.22 + questionCount * 0.03 + codeBoost - conciseBoost * 0.18, 0.35, 2.8);
-    return Math.max(40, Math.round(inputTokens * ratio + questionCount * 6 + 24));
+    const base = 200 + detailBoost * 300 + questionCount * 50 + (codeBoost > 0 ? 200 : 0) - conciseBoost * 100;
+    return Math.max(40, Math.min(4096, Math.round(base)));
   }
 
   function estimateTokenBreakdown(text, attachments = []) {

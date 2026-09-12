@@ -599,7 +599,7 @@
       return {
         label: sectionLabel(description, "attachment"),
         type: "attachment",
-        tokens: Math.ceil(description.length / 7 + (attachment.sizeBytes ? attachment.sizeBytes / 65536 : 0) + (attachment.pages ?? 0) * 18),
+        tokens: Math.ceil(description.length / 7 + (attachment.sizeBytes ? attachment.sizeBytes / 4 : 0) + (attachment.pages ?? 0) * 18),
         start: 0,
         end: description.length
       };
@@ -619,8 +619,8 @@
     ].filter((needle) => normalized.includes(needle)).length;
     const conciseBoost = ["brief", "concise", "short answer", "one paragraph", "one sentence"].filter((needle) => normalized.includes(needle)).length;
     const codeBoost = normalized.includes("```") || normalized.includes("typescript") || normalized.includes("javascript") || normalized.includes("python") ? 0.35 : 0;
-    const ratio = clamp(0.75 + detailBoost * 0.22 + questionCount * 0.03 + codeBoost - conciseBoost * 0.18, 0.35, 2.8);
-    return Math.max(40, Math.round(inputTokens * ratio + questionCount * 6 + 24));
+    const base = 200 + detailBoost * 300 + questionCount * 50 + (codeBoost > 0 ? 200 : 0) - conciseBoost * 100;
+    return Math.max(40, Math.min(4096, Math.round(base)));
   }
   function estimateTokenBreakdown(text, attachments = []) {
     const sharedEstimator = globalThis.YorTokenAccuracy?.estimateTokenBreakdown;
@@ -644,15 +644,17 @@
   function estimateConversation(messages) {
     let promptTokens = 0;
     let outputTokens = 0;
+    let runningContext = 0;
     const contextGrowth = [];
     for (const message of messages) {
       const tokens = estimateTokenBreakdown(message.text).total;
+      runningContext += tokens;
       if (message.role === "assistant") {
         outputTokens += tokens;
       } else {
-        promptTokens += tokens;
+        promptTokens += runningContext;
       }
-      contextGrowth.push(promptTokens + outputTokens);
+      contextGrowth.push(runningContext);
     }
     return {
       promptTokens,
@@ -952,7 +954,7 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
   function getUtcDailyWindowBounds(rule, now) {
     const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
     const current = new Date(now);
-    const anchor = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
+    const anchor = new Date(current.getFullYear(), current.getMonth(), current.getDate(), hours, minutes, 0, 0).getTime();
     const start = anchor > now ? anchor - 864e5 : anchor;
     return { start, end: start + 864e5 };
   }
@@ -960,8 +962,8 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
     const targetDay = rule.dayOfWeek ?? 1;
     const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
     const current = new Date(now);
-    const anchorToday = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
-    const delta = (current.getUTCDay() - targetDay + 7) % 7;
+    const anchorToday = new Date(current.getFullYear(), current.getMonth(), current.getDate(), hours, minutes, 0, 0).getTime();
+    const delta = (current.getDay() - targetDay + 7) % 7;
     let start = anchorToday - delta * 864e5;
     if (start > now) start -= 7 * 864e5;
     return { start, end: start + 7 * 864e5 };

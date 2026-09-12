@@ -108,8 +108,9 @@ function truncate(text, limit = 120) {
 // src/lib/format.ts
 function formatTokens(tokens) {
   if (tokens === void 0 || Number.isNaN(tokens)) return "\u2014";
-  if (tokens >= 1e6) return `${round(tokens / 1e6, 2)}M`;
-  if (tokens >= 1e3) return `${round(tokens / 1e3, 1)}K`;
+  const rounded = Math.round(tokens);
+  if (rounded >= 999500) return `${round(tokens / 1e6, 2)}M`;
+  if (rounded >= 995) return `${round(tokens / 1e3, 1)}K`;
   return `${Math.round(tokens)}`;
 }
 function formatCurrency(value) {
@@ -117,8 +118,8 @@ function formatCurrency(value) {
   return new Intl.NumberFormat(void 0, {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: value < 1 ? 2 : 0,
-    maximumFractionDigits: value < 1 ? 2 : 0
+    minimumFractionDigits: 2,
+    maximumFractionDigits: value < 1 ? 4 : 2
   }).format(value);
 }
 function formatDateTime(timestamp) {
@@ -409,7 +410,7 @@ async function render() {
   document.querySelector("#export-csv-btn").onclick = async (event) => {
     await runButtonAction(event.currentTarget, async () => {
       const dayRows = Array.isArray(snapshot.analytics.byDay) ? snapshot.analytics.byDay : [];
-      const rows = ["date,tokens,prompts,cost", ...dayRows.map((day) => `${day.date},${safeNumber(day.tokens)},${safeNumber(day.prompts)},${safeNumber(day.cost).toFixed(4)}`)];
+      const rows = ["date,tokens,prompts,cost", ...dayRows.map((day) => `"${day.date}",${safeNumber(day.tokens)},${safeNumber(day.prompts)},${safeNumber(day.cost).toFixed(4)}`)];
       download("yor-token-usage-daily.csv", rows.join("\n"), "text/csv");
     }, "Exported");
   };

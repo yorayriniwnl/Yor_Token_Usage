@@ -60,13 +60,13 @@ async function requeueOrDeadLetter(id: string, payload: UsageBatchJob, error: un
       activeRetryTimers.delete(timer);
       try {
         await redis.xadd(STREAM, "*", "payload", JSON.stringify({ ...payload, attempts }));
+        await redis.xack(STREAM, GROUP, id);
       } catch (err) {
         console.error({ id, error: err }, "failed to requeue retry job");
       }
     }, retryDelay);
     timer.unref();
     activeRetryTimers.add(timer);
-    await redis.xack(STREAM, GROUP, id);
   }
 }
 

@@ -113,29 +113,40 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       const remainingTokens = Math.max(0, tokenCap - accountUsedTokens);
       const limited = accountUsedTokens >= tokenCap;
 
-      // Real-world pricing & costs
-      const accountCost = calculateCost(
-        accountUsage._sum.promptTokens ?? 0,
-        accountUsage._sum.outputTokens ?? 0,
-        modelName,
-        providerName
-      );
-      const scopedCost = isFiltered && scopedUsage
-        ? calculateCost(
-            scopedUsage._sum.promptTokens ?? 0,
-            scopedUsage._sum.outputTokens ?? 0,
-            modelName,
-            providerName
-          )
-        : accountCost;
+      // Real-world pricing & costs — group by model/provider for accurate per-model pricing
+      const accountCostGroups = await app.prisma.usageEvent.groupBy({
+        by: ['provider', 'model'],
+        where: accountUsageWhere,
+        _sum: { promptTokens: true, outputTokens: true }
+      });
+      const accountCost = accountCostGroups.reduce((acc, g) => {
+        const c = calculateCost(g._sum.promptTokens ?? 0, g._sum.outputTokens ?? 0, g.model, g.provider);
+        return { totalCost: acc.totalCost + c.totalCost, inputCost: acc.inputCost + c.inputCost, outputCost: acc.outputCost + c.outputCost };
+      }, { totalCost: 0, inputCost: 0, outputCost: 0 });
+
+      let scopedCost = accountCost;
+      if (isFiltered && scopedUsage) {
+        const scopedCostGroups = await app.prisma.usageEvent.groupBy({
+          by: ['provider', 'model'],
+          where: scopedUsageWhere,
+          _sum: { promptTokens: true, outputTokens: true }
+        });
+        scopedCost = scopedCostGroups.reduce((acc, g) => {
+          const c = calculateCost(g._sum.promptTokens ?? 0, g._sum.outputTokens ?? 0, g.model, g.provider);
+          return { totalCost: acc.totalCost + c.totalCost, inputCost: acc.inputCost + c.inputCost, outputCost: acc.outputCost + c.outputCost };
+        }, { totalCost: 0, inputCost: 0, outputCost: 0 });
+      }
 
       const exactProviderWindow = resolveProviderWindow(providerName, now, earliestRollingEvent?.occurredAt);
-      const rollingCost = calculateCost(
-        rollingUsage._sum.promptTokens ?? 0,
-        rollingUsage._sum.outputTokens ?? 0,
-        modelName,
-        providerName
-      );
+      const rollingCostGroups = await app.prisma.usageEvent.groupBy({
+        by: ['provider', 'model'],
+        where: rollingUsageWhere,
+        _sum: { promptTokens: true, outputTokens: true }
+      });
+      const rollingCost = rollingCostGroups.reduce((acc, g) => {
+        const c = calculateCost(g._sum.promptTokens ?? 0, g._sum.outputTokens ?? 0, g.model, g.provider);
+        return { totalCost: acc.totalCost + c.totalCost, inputCost: acc.inputCost + c.inputCost, outputCost: acc.outputCost + c.outputCost };
+      }, { totalCost: 0, inputCost: 0, outputCost: 0 });
 
       return {
         usedTokens: scopedUsedTokens,

@@ -108,21 +108,24 @@ function round(value, digits = 0) {
 // src/lib/format.ts
 function formatTokens(tokens) {
   if (tokens === void 0 || Number.isNaN(tokens)) return "\u2014";
-  if (tokens >= 1e6) return `${round(tokens / 1e6, 2)}M`;
-  if (tokens >= 1e3) return `${round(tokens / 1e3, 1)}K`;
+  const rounded = Math.round(tokens);
+  if (rounded >= 999500) return `${round(tokens / 1e6, 2)}M`;
+  if (rounded >= 995) return `${round(tokens / 1e3, 1)}K`;
   return `${Math.round(tokens)}`;
 }
 function formatPercent(value) {
   if (value === void 0 || Number.isNaN(value)) return "\u2014";
-  return `${round(clamp(value, 0, 100), value > 10 ? 0 : 1)}%`;
+  const clamped = clamp(value, 0, 100);
+  if (clamped > 99 && clamped < 100) return "99.9%";
+  return `${round(clamped, clamped > 10 ? 0 : 1)}%`;
 }
 function formatCurrency(value) {
   if (value === void 0 || Number.isNaN(value)) return "\u2014";
   return new Intl.NumberFormat(void 0, {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: value < 1 ? 2 : 0,
-    maximumFractionDigits: value < 1 ? 2 : 0
+    minimumFractionDigits: 2,
+    maximumFractionDigits: value < 1 ? 4 : 2
   }).format(value);
 }
 function formatClock(timestamp) {
@@ -296,11 +299,11 @@ function buildSessionSummary(session, snapshot) {
   if (!session || !snapshot) {
     return "Open ChatGPT, Claude, Gemini, Perplexity, or Grok to start capturing live token usage.";
   }
-  const previous = snapshot.analytics.timeline[1];
+  const previous = snapshot.analytics.timeline[0];
   if (!previous) {
     return `Watching ${SITE_LABELS[session.site]} with ${session.model}. Your first captured exchange will appear here.`;
   }
-  const delta = session.currentEstimate.inputTokens - previous.promptTokens;
+  const delta = session.currentEstimate.inputTokens - (previous.promptTokens ?? previous.totalTokens ?? 0);
   const direction = delta >= 0 ? "larger" : "smaller";
   return `The active prompt is ${formatTokens(Math.abs(delta))} tokens ${direction} than the previous captured exchange, and the current thread is around ${formatTokens(session.currentThread?.totalTokens)} tokens.`;
 }
@@ -353,12 +356,12 @@ async function render() {
   renderHero(snapshot);
   renderSparkline(
     trendChart,
-    snapshot.analytics.byDay.map((day) => day.tokens),
-    snapshot.analytics.byDay.map((day) => day.date)
+    (snapshot.analytics.byDay || []).map((day) => day.tokens),
+    (snapshot.analytics.byDay || []).map((day) => day.date)
   );
   renderBarList(
     modelBreakdown,
-    snapshot.analytics.byModel.slice(0, 4).map((item) => ({ label: item.label, value: item.tokens, meta: `${formatTokens(item.tokens)} \u2022 ${item.prompts} prompts` }))
+    (snapshot.analytics.byModel || []).slice(0, 4).map((item) => ({ label: item.label, value: item.tokens, meta: `${formatTokens(item.tokens)} \u2022 ${item.prompts} prompts` }))
   );
   const currentSuggestions = snapshot.currentSession?.currentEstimate.suggestions ?? [];
   suggestions.innerHTML = currentSuggestions.length ? currentSuggestions.slice(0, 3).map(
