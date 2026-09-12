@@ -418,6 +418,31 @@ button:disabled {
   animation: fade-in var(--dur-med) var(--ease-out) both;
 }
 
+.legal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 0 12px;
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.legal-footer a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.legal-footer a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.legal-sep {
+  opacity: 0.4;
+}
+
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(6px) scale(0.992); }
   to { opacity: 1; transform: translateY(0) scale(1); }

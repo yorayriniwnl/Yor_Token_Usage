@@ -10,7 +10,7 @@ Version 1.1 adds an opt-in backend transport in Settings. A connected extension 
 
 This repository does not embed a hosted identity-provider client or production credentials. Until a real OIDC provider, API URL, and published extension ID are configured, the cloud panel is an advanced integration surface rather than a turnkey consumer sign-in flow. Billing remains read-only status infrastructure; there is no purchase or webhook flow.
 
-The current data inventory, user controls, retention limitations, and publication requirements are documented in [PRIVACY.md](./PRIVACY.md). That document is an engineering disclosure, not a substitute for entity-specific legal review before a public store listing.
+The current data inventory, user controls, retention limitations, and publication requirements are documented in [PRIVACY.md](./PRIVACY.md). Terms of service, licensing, and interaction telemetry terms for model training are set forth in [TERMS.md](./TERMS.md). These documents serve as operational and legal baselines, not a substitute for entity-specific legal counsel before a public store listing.
 
 ## Measurement contract
 
@@ -20,7 +20,7 @@ The compact overlay reports estimated visible thread + draft tokens, not account
 
 The current calibration uses a 20-sample corpus covering English, Hindi, Hinglish, code, Markdown, JSON, Unicode, math, URLs, and large mixed prompts. Against `gpt-tokenizer@4.0.0` using the OpenAI `o200k_base` reference, the measured worst case is 37.61% and the displayed bound is ±40%. This reference does not include hidden system context, tools, images, provider-specific serialization, or billing counters. See the [calibration report](./docs/accuracy-benchmark.md), or regenerate it with `npm run accuracy:benchmark -- --write`.
 
-The backend stores the same provenance fields and returns them through sync. Cloud uploads contain counters and measurement metadata only; prompt text, previews, hashes, and arbitrary local metadata remain local.
+The backend stores the same provenance fields and returns them through sync. Telemetry and interaction data processed for model development and calibration are handled in accordance with [TERMS.md](./TERMS.md) and [PRIVACY.md](./PRIVACY.md).
 
 ## Verify the extension
 

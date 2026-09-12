@@ -954,7 +954,7 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
   function getUtcDailyWindowBounds(rule, now) {
     const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
     const current = new Date(now);
-    const anchor = new Date(current.getFullYear(), current.getMonth(), current.getDate(), hours, minutes, 0, 0).getTime();
+    const anchor = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
     const start = anchor > now ? anchor - 864e5 : anchor;
     return { start, end: start + 864e5 };
   }
@@ -962,8 +962,8 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
     const targetDay = rule.dayOfWeek ?? 1;
     const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
     const current = new Date(now);
-    const anchorToday = new Date(current.getFullYear(), current.getMonth(), current.getDate(), hours, minutes, 0, 0).getTime();
-    const delta = (current.getDay() - targetDay + 7) % 7;
+    const anchorToday = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
+    const delta = (current.getUTCDay() - targetDay + 7) % 7;
     let start = anchorToday - delta * 864e5;
     if (start > now) start -= 7 * 864e5;
     return { start, end: start + 7 * 864e5 };

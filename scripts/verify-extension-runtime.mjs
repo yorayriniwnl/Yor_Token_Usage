@@ -76,7 +76,7 @@ const chrome = {
     onStartup: event("startup"),
     onMessage: event("message"),
     getURL: (path) => `${extensionRoot}${path}`,
-    getManifest: () => ({ version: "1.1.0" })
+    getManifest: () => ({ version: "1.1.1" })
   },
   alarms: { create: async () => {}, onAlarm: event("alarm") },
   commands: { onCommand: event("command") },

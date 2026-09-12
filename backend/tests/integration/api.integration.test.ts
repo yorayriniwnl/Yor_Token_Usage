@@ -95,7 +95,7 @@ test("authenticated API lifecycle persists, deduplicates, and isolates user data
     origin: extensionOrigin,
     "x-install-id": "integration-install-0001",
     "x-extension-id": extensionId,
-    "x-extension-version": "1.1.0",
+    "x-extension-version": "1.1.1",
     "x-browser": "chromium",
     "x-platform": "integration"
   };
