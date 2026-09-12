@@ -113,7 +113,13 @@
     return fallbackIndex % 2 === 0 ? "user" : "assistant";
   }
   function normalizeMessageText(node) {
-    return compactWhitespace(textFromNode(node));
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll('button, [role="toolbar"], time, [role="status"], [aria-hidden="true"], .sr-only').forEach(element => element.remove());
+    const heading = copy.querySelector('h1, h2, h3, [role="heading"]');
+    if (heading && /^(You said:|Claude responded:)/i.test(heading.textContent.trim())) heading.remove();
+    // Preserve paragraph boundaries when extracting from the detached, cleaned tree.
+    copy.querySelectorAll('p, div, li, pre, br').forEach(element => element.append('\n'));
+    return compactWhitespace(copy.textContent || "");
   }
   function cleanModelName(value) {
     if (!value) return void 0;
@@ -175,6 +181,7 @@
     return `${site}:root`;
   }
   var SelectorSiteAdapter = class {
+    messageIds = new WeakMap();
     site;
     label;
     config;
@@ -214,20 +221,25 @@
     getConversationRoot() {
       return queryFirst(this.config.conversationRoot) ?? document.body;
     }
+    isGenerating() {
+      const root = this.getConversationRoot();
+      return queryAll(['button[aria-label*="Stop" i]', 'button[data-testid*="stop" i]', '[aria-busy="true"]'], root)
+        .some(node => node.getClientRects().length > 0 && !node.closest('.yor-token-usage-root'));
+    }
     collectMessages() {
       const root = this.getConversationRoot();
       const now = Date.now();
       const messages = [];
       const seen = /* @__PURE__ */ new Set();
-      const pushMessage = (node, role, index, source, minimumLength = 2) => {
+      const pushMessage = (node, role, index, source, minimumLength = 1) => {
         const text = normalizeMessageText(node);
         if (text.length < minimumLength) return;
         if (/^(copy|retry|edit|share|thumbs up|thumbs down)$/i.test(text)) return;
-        const identity = `${role}:${hashString(text)}`;
-        if (seen.has(identity)) return;
-        seen.add(identity);
+        if (seen.has(node) || messages.some(message => message.node.contains(node) || node.contains(message.node))) return;
+        seen.add(node);
+        if (!this.messageIds.has(node)) this.messageIds.set(node, uid("message"));
         messages.push({
-          id: `${role}_${hashString(`${source}:${text}:${index}`)}`,
+          id: this.messageIds.get(node),
           role,
           text,
           timestamp: now,
@@ -254,8 +266,10 @@
           "[class*='font-user']"
         ];
         sortByDomOrder(queryAll(genericSelectors, root)).forEach((node, index) => {
-          const role = selectorMatches(node, this.config.userMessage) || closestSelectorMatches(node, this.config.userMessage) ? "user" : selectorMatches(node, this.config.assistantMessage) || closestSelectorMatches(node, this.config.assistantMessage) ? "assistant" : roleHintFromNode(node, index);
-          pushMessage(node, role, index, "generic", 12);
+          const heading = node.querySelector('h1, h2, h3, [role="heading"]')?.textContent.trim() ?? "";
+          const semanticRole = /^You said:/i.test(heading) ? "user" : /^Claude responded:/i.test(heading) ? "assistant" : void 0;
+          const role = semanticRole ?? (selectorMatches(node, this.config.userMessage) || closestSelectorMatches(node, this.config.userMessage) ? "user" : selectorMatches(node, this.config.assistantMessage) || closestSelectorMatches(node, this.config.assistantMessage) ? "assistant" : roleHintFromNode(node, index));
+          pushMessage(node, role, index, "generic", 1);
         });
       }
       return messages.sort((a, b) => a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_PRECEDING ? 1 : -1).map(({ node, ...message }) => message).slice(-40);
@@ -1954,19 +1968,30 @@ button:focus-visible {
         analysis,
         model,
         threadId: adapter.getThreadId(),
-        assistantCount: messages.filter((message) => message.role === "assistant").length,
+        assistantIds: new Set(messages.filter((message) => message.role === "assistant").map(message => message.id)),
+        awaitingThreadAssignment: messages.length === 0 && /:(?:root|new)$/.test(adapter.getThreadId()),
         startedAt: Date.now()
       };
     };
     const finalizePendingPrompt = debounce(async () => {
       if (!pendingPrompt) return;
+      const messages = adapter.collectMessages();
+      if (adapter.getThreadId() !== pendingPrompt.threadId) {
+        if (pendingPrompt.awaitingThreadAssignment && messages.some(message => message.role === "user" && compactWhitespace(message.text) === compactWhitespace(pendingPrompt.prompt))) {
+          pendingPrompt.threadId = adapter.getThreadId();
+          pendingPrompt.awaitingThreadAssignment = false;
+        } else {
+          pendingPrompt = void 0;
+          lastPromptFingerprint = "";
+          return;
+        }
+      }
       if (Date.now() - pendingPrompt.startedAt > 10 * 60_000) {
         pendingPrompt = void 0;
         lastPromptFingerprint = "";
         return;
       }
-      const messages = adapter.collectMessages();
-      const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text.length > 8);
+      const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text.trim() && !pendingPrompt.assistantIds.has(message.id));
       const hints = adapter.getQuotaHints();
       if (hints.status === "limited") {
         const rateLimitedEvent = {
@@ -2004,8 +2029,7 @@ button:focus-visible {
         return;
       }
       if (!latestAssistant) return;
-      const afterAssistantCount = messages.filter((message) => message.role === "assistant").length;
-      if (afterAssistantCount <= pendingPrompt.assistantCount) return;
+      if (adapter.isGenerating()) return;
       const assistantAnalysis = analyzePrompt(latestAssistant.text, {
         provider: adapter.site,
         model: pendingPrompt.model,
@@ -2101,10 +2125,13 @@ button:focus-visible {
       debouncedSync();
       finalizePendingPrompt();
     });
-    observer.observe(adapter.getConversationRoot() ?? document.body, {
+    // SPA navigation may replace <main>; observing that old node loses all future turns.
+    observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["aria-label", "aria-busy", "data-testid"]
     });
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === "toggle-overlay") {

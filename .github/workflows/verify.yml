@@ -86,6 +86,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify unpacked extension in Chromium (controlled provider fixture)
         run: npm run browser:check
+      - name: Verify capture through storage and dashboard
+        run: npm run capture:check
       - name: Verify normal-motion layout
         run: npm run browser:check
         env:

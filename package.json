@@ -7,7 +7,8 @@
     "reset:check": "node scripts/verify-reset-predictor.mjs",
     "overlay:check": "node scripts/verify-overlay-window.mjs",
     "quota:check": "node scripts/verify-quota-evidence.mjs",
-    "browser:check": "node scripts/verify-overlay-browser.cjs"
+    "browser:check": "node scripts/verify-overlay-browser.cjs",
+    "capture:check": "node scripts/verify-capture-browser.cjs"
   },
   "devDependencies": {
     "gpt-tokenizer": "4.0.0",

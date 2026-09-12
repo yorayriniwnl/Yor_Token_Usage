@@ -34,6 +34,8 @@ The verifier checks every shipped JavaScript file, parses the Manifest V3 manife
 
 For rendered regressions, run `npm ci`, `npx playwright install chromium`, then `npm run browser:check`. This loads the real unpacked extension and service worker in Chromium against controlled Claude-like HTML. It checks input updates, quota provenance, unknown/empty states, desktop/mobile positioning, details interaction, and settings persistence. It does **not** verify a signed-in provider account or current live provider selectors. Set `YOR_TEST_MOTION=normal` to also test normal motion (reduced motion is the default).
 
+Run `npm run capture:check` to exercise sending, response detection, storage and rendered dashboard totals with the real extension. Regressions cover short replies, long threads, repeated replies, paused streams with a visible generation signal, cross-chat navigation, semantic message markup, first-message URL assignment and replaced conversation roots. Without a supported generation signal, completion still relies on DOM inactivity; provider selectors and account-level quotas require separate live verification.
+
 ## Verify the backend
 
 The backend requires Node 22+, PostgreSQL, Redis, an OIDC/JWKS provider, and environment variables from `backend/.env.example`. For the complete local database/auth/API integration check on Windows with Docker Desktop:
