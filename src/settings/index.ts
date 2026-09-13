@@ -1,4 +1,6 @@
-const SITE_LABELS: Record<string, string> = {
+import type { UserPreferences, SitePreference } from '../types/state.js';
+import type { ProviderId } from '../types/models.js';
+const SITE_LABELS: Record<ProviderId | "generic", string> = {
   chatgpt: "ChatGPT",
   claude: "Claude",
   gemini: "Gemini",
@@ -7,9 +9,9 @@ const SITE_LABELS: Record<string, string> = {
   generic: "Generic"
 };
 
-const SITE_ORDER = ["chatgpt", "claude", "gemini", "perplexity", "grok", "generic"];
+const SITE_ORDER: (ProviderId | "generic")[] = ["chatgpt", "claude", "gemini", "perplexity", "grok", "generic"];
 
-let currentPreferences: any = null;
+let currentPreferences: UserPreferences | null = null;
 
 async function sendMessage<T = any>(message: any): Promise<T> {
   return new Promise((resolve) => {
@@ -30,7 +32,7 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function renderSiteCard(site: string, sitePref: any): string {
+function renderSiteCard(site: ProviderId | "generic", sitePref: SitePreference | undefined): string {
   const resetRule = sitePref?.resetRule || { kind: "rolling", inferred: true };
   const resetKind = resetRule.kind || "rolling";
   const anchorLocalTime = resetRule.anchorLocalTime || "00:00";
@@ -166,7 +168,7 @@ async function saveCurrentSettings() {
   for (const site of SITE_ORDER) {
     const card = document.querySelector(`.site-card[data-site="${site}"]`);
     const initialSitePref = currentPreferences?.sites?.[site] || {};
-    const initialRule = initialSitePref?.resetRule || { kind: "rolling", inferred: true };
+    const initialRule = (initialSitePref as SitePreference)?.resetRule || { kind: "rolling", inferred: true };
 
     if (!card) {
       updatedSites[site] = initialSitePref;

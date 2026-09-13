@@ -1,7 +1,8 @@
-// @ts-nocheck
+import type { UserPreferences, SitePreference, ResetRule, } from '../types/state.js';
+import type { ProviderId } from '../types/models.js';
 
 // src/lib/constants.ts
-var SITE_LABELS = {
+var SITE_LABELS: Record<ProviderId | "generic", string> = {
   chatgpt: "ChatGPT",
   claude: "Claude",
   gemini: "Gemini",
@@ -9,7 +10,7 @@ var SITE_LABELS = {
   grok: "Grok",
   generic: "Other"
 };
-function makeResetRule(kind, description, intervalMinutes) {
+function makeResetRule(kind: any, description: string, intervalMinutes: number | undefined): ResetRule {
   return {
     kind,
     intervalMinutes,
@@ -17,8 +18,8 @@ function makeResetRule(kind, description, intervalMinutes) {
     description
   };
 }
-function makeSiteSettings(site) {
-  const defaults = {
+function makeSiteSettings(site: ProviderId | "generic"): SitePreference {
+  const defaults: Record<string, any> = {
     chatgpt: {
       enabled: true,
       resetRule: makeResetRule("rolling", "Inferred rolling window. Adjust in settings if your plan differs.", 180),
@@ -76,7 +77,7 @@ function makeSiteSettings(site) {
   };
   return structuredClone(defaults[site]);
 }
-var DEFAULT_PREFERENCES = {
+var DEFAULT_PREFERENCES: UserPreferences = {
   theme: "system",
   compactMode: false,
   showOverlay: true,
@@ -99,29 +100,29 @@ var DEFAULT_PREFERENCES = {
 };
 
 // src/lib/utils.ts
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
-function round(value, digits = 0) {
+function round(value: number, digits: number = 0): number {
   const precision = 10 ** digits;
   return Math.round(value * precision) / precision;
 }
 
 // src/lib/format.ts
-function formatTokens(tokens) {
+function formatTokens(tokens: number | undefined): string {
   if (tokens === void 0 || Number.isNaN(tokens)) return "\u2014";
   const rounded = Math.round(tokens);
   if (rounded >= 999500) return `${round(tokens / 1e6, 2)}M`;
   if (rounded >= 995) return `${round(tokens / 1e3, 1)}K`;
   return `${Math.round(tokens)}`;
 }
-function formatPercent(value) {
+function formatPercent(value: number | undefined): string {
   if (value === void 0 || Number.isNaN(value)) return "\u2014";
   const clamped = clamp(value, 0, 100);
   if (clamped > 99 && clamped < 100) return "99.9%";
   return `${round(clamped, clamped > 10 ? 0 : 1)}%`;
 }
-function formatCurrency(value) {
+function formatCurrency(value: number | undefined): string {
   if (value === void 0 || Number.isNaN(value)) return "\u2014";
   return new Intl.NumberFormat(void 0, {
     style: "currency",
@@ -130,36 +131,30 @@ function formatCurrency(value) {
     maximumFractionDigits: value < 1 ? 4 : 2
   }).format(value);
 }
-function formatClock(timestamp) {
+function formatClock(timestamp: number | undefined): string {
   if (!timestamp) return "Unknown";
   return new Intl.DateTimeFormat(void 0, {
     hour: "numeric",
     minute: "2-digit"
   }).format(new Date(timestamp));
 }
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[char]);
+function escapeHtml(value: any): string {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"} as Record<string, string>)[char] as string);
 }
 
 // src/lib/runtime.ts
-async function sendRuntimeMessage(message) {
+async function sendRuntimeMessage<T = any>(message: any): Promise<T> {
   return chrome.runtime.sendMessage(message);
 }
-async function getActiveTab() {
+async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
-async function getActiveUrl() {
+async function getActiveUrl(): Promise<string | undefined> {
   const tab = await getActiveTab();
   return tab?.url;
 }
-async function sendToActiveTab(message) {
+async function sendToActiveTab<T = any>(message: any): Promise<T | undefined> {
   const tab = await getActiveTab();
   if (!tab?.id) return void 0;
   try {
@@ -170,7 +165,7 @@ async function sendToActiveTab(message) {
 }
 
 // src/ui/charts.ts
-function renderSparkline(container, values, labels = []) {
+function renderSparkline(container: HTMLElement, values: number[], labels: string[] = []): void {
   if (!values.length) {
     container.innerHTML = '<div class="empty-chart">No usage data yet.</div>';
     return;
@@ -180,7 +175,7 @@ function renderSparkline(container, values, labels = []) {
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
   const range = Math.max(1, max - min);
-  const points = values.map((value, index) => {
+  const points = values.map((value: number, index: number) => {
     const x = index / Math.max(1, values.length - 1) * width;
     const y = height - (value - min) / range * (height - 14) - 7;
     return `${x},${y}`;
@@ -197,7 +192,7 @@ function renderSparkline(container, values, labels = []) {
       </defs>
       <polyline fill="none" stroke="rgba(143,220,196,0.95)" stroke-width="3" points="${points.join(" ")}"></polyline>
       <polygon fill="url(#spark-fill)" points="0,${height} ${points.join(" ")} ${width},${height}"></polygon>
-      ${values.map((value, index) => {
+      ${values.map((value: number, index: number) => {
     const [x, y] = points[index].split(",");
     const label = labels[index] ?? `${index + 1}`;
     return `<circle cx="${x}" cy="${y}" r="3.4" fill="rgba(255,255,255,0.96)"><title>${escapeHtml(label)}: ${formatTokens(value)} tokens</title></circle>`;
@@ -205,14 +200,14 @@ function renderSparkline(container, values, labels = []) {
     </svg>
   `;
 }
-function renderBarList(container, items, formatter = formatTokens) {
+function renderBarList(container: HTMLElement, items: { label: string; value: number; meta?: string }[], formatter: (v: number) => string = formatTokens): void {
   if (!items.length) {
     container.innerHTML = '<div class="empty-chart">Nothing captured yet.</div>';
     return;
   }
-  const max = Math.max(...items.map((item) => Number.isFinite(item.value) ? item.value : 0), 1);
+  const max = Math.max(...items.map((item: any) => Number.isFinite(item.value) ? item.value : 0), 1);
   container.innerHTML = items.map(
-    (item) => {
+    (item: any) => {
       const value = Number.isFinite(item.value) ? item.value : 0;
       const width = Math.max(5, value / max * 100);
       return `
@@ -229,17 +224,17 @@ function renderBarList(container, items, formatter = formatTokens) {
 }
 
 // src/popup/index.ts
-var usageCard = document.querySelector("#usage-card");
-var trendChart = document.querySelector("#trend-chart");
-var modelBreakdown = document.querySelector("#model-breakdown");
-var suggestions = document.querySelector("#suggestions");
-var changeSummary = document.querySelector("#change-summary");
-function applyPresentation(preferences) {
+var usageCard = document.querySelector("#usage-card") as HTMLElement;
+var trendChart = document.querySelector("#trend-chart") as HTMLElement;
+var modelBreakdown = document.querySelector("#model-breakdown") as HTMLElement;
+var suggestions = document.querySelector("#suggestions") as HTMLElement;
+var changeSummary = document.querySelector("#change-summary") as HTMLElement;
+function applyPresentation(preferences: any) {
   const theme = preferences.theme === "system" ? (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark") : preferences.theme;
   document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
   document.documentElement.classList.toggle("compact", preferences.compactMode === true);
 }
-async function runButtonAction(button, task, doneLabel = "Done") {
+async function runButtonAction(button: HTMLElement, task: () => Promise<void>, doneLabel: string = "Done") {
   const originalLabel = button.textContent;
   button.classList.add("is-busy");
   try {
@@ -258,7 +253,7 @@ async function runButtonAction(button, task, doneLabel = "Done") {
   }
 }
 function renderLoading() {
-  usageCard.innerHTML = `
+  usageCard!.innerHTML = `
     <div class="hero-copy">
       <div class="skeleton-stack">
         <span class="skeleton-line w-lg"></span>
@@ -270,20 +265,20 @@ function renderLoading() {
       ${Array.from({ length: 4 }, () => '<div class="metric"><span class="skeleton-line w-sm"></span><strong class="skeleton-line w-md"></strong></div>').join("")}
     </div>
   `;
-  trendChart.innerHTML = '<div class="skeleton-chart"></div>';
-  modelBreakdown.innerHTML = '<div class="skeleton-chart short"></div>';
-  suggestions.innerHTML = '<div class="skeleton-chart short"></div>';
-  changeSummary.innerHTML = '<span class="skeleton-line w-lg"></span>';
+  trendChart!.innerHTML = '<div class="skeleton-chart"></div>';
+  modelBreakdown!.innerHTML = '<div class="skeleton-chart short"></div>';
+  suggestions!.innerHTML = '<div class="skeleton-chart short"></div>';
+  changeSummary!.innerHTML = '<span class="skeleton-line w-lg"></span>';
 }
-function describeRuntimeError(error) {
+function describeRuntimeError(error: any): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/chrome|sendMessage|extension context|cannot read properties of undefined|is not a function/i.test(message)) {
     return "The extension background service is unavailable. Reload Yor and reopen this view.";
   }
   return message.slice(0, 240) || "The extension could not load this view.";
 }
-function renderError(message) {
-  usageCard.innerHTML = `
+function renderError(message: string) {
+  usageCard!.innerHTML = `
     <div class="hero-copy">
       <div>
         <h2>Could not load usage</h2>
@@ -292,24 +287,24 @@ function renderError(message) {
       <span class="status-chip">Offline</span>
     </div>
   `;
-  trendChart.innerHTML = '<div class="empty-chart">Refresh the active AI tab, then reopen this popup.</div>';
-  modelBreakdown.innerHTML = '<div class="empty-chart">No model data available.</div>';
-  suggestions.innerHTML = '<div class="empty-chart">No prompt suggestions available.</div>';
-  changeSummary.textContent = "The extension runtime did not return a snapshot.";
+  trendChart!.innerHTML = '<div class="empty-chart">Refresh the active AI tab, then reopen this popup.</div>';
+  modelBreakdown!.innerHTML = '<div class="empty-chart">No model data available.</div>';
+  suggestions!.innerHTML = '<div class="empty-chart">No prompt suggestions available.</div>';
+  changeSummary!.textContent = "The extension runtime did not return a snapshot.";
 }
-function buildSessionSummary(session, snapshot) {
+function buildSessionSummary(session: any, snapshot: any): string {
   if (!session || !snapshot) {
     return "Open ChatGPT, Claude, Gemini, Perplexity, or Grok to start capturing live token usage.";
   }
   const previous = snapshot.analytics.timeline[0];
   if (!previous) {
-    return `Watching ${SITE_LABELS[session.site]} with ${session.model}. Your first captured exchange will appear here.`;
+    return `Watching ${SITE_LABELS[session.site as ProviderId]} with ${session.model}. Your first captured exchange will appear here.`;
   }
   const delta = session.draftAnalysis?.inputTokens - (previous.promptTokens ?? previous.totalTokens ?? 0);
   const direction = delta >= 0 ? "larger" : "smaller";
   return `The active prompt is ${formatTokens(Math.abs(delta))} tokens ${direction} than the previous captured exchange, and the current thread is around ${formatTokens(session.contextAccounting?.visibleThreadTokens)} tokens.`;
 }
-function renderHero(snapshot) {
+function renderHero(snapshot: any) {
   const session = snapshot.currentSession;
   const percent = Number.isFinite(session?.quotaSignal?.percentUsed) ? session.quotaSignal.percentUsed : 0;
   const statusLabel = session?.quotaSignal?.status === "limited" ? "Limit reached" : session?.quotaSignal?.status === "warning" ? "Near limit" : session?.quotaSignal?.source === "provider_ui" ? "Provider signal" : "Estimated";
@@ -317,10 +312,10 @@ function renderHero(snapshot) {
   const measurementLabel = measurement?.measurementLevel === "approximation" ? "Approximate" : measurement?.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
   const measurementConfidence = Number.isFinite(measurement?.confidence) ? `${Math.round(measurement.confidence * 100)}% confidence` : "confidence unknown";
   const measurementMargin = Number.isFinite(measurement?.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}% bound` : "no error bound";
-  usageCard.innerHTML = `
+  usageCard!.innerHTML = `
     <div class="hero-copy">
       <div>
-        <h2>${escapeHtml(session ? `${SITE_LABELS[session.site]} \u2022 ${session.model}` : "No active AI tab")}</h2>
+        <h2>${escapeHtml(session ? `${SITE_LABELS[session.site as ProviderId]} \u2022 ${session.model}` : "No active AI tab")}</h2>
         <p>${escapeHtml(session ? `Reset ${session.quotaSignal?.resetAt ? formatClock(session.quotaSignal.resetAt) : "unknown"} \u2022 last update ${formatClock(session.lastUpdated)}` : "Pin the popup while you work to monitor usage in real time.")}</p>
         ${session ? `<p class="measurement-note" title="${escapeHtml(measurement?.notes ?? "Token provenance is unavailable.")}">${escapeHtml(`${measurementLabel} \u2022 ${measurementConfidence} \u2022 ${measurementMargin}`)}</p>` : ""}
       </div>
@@ -342,7 +337,7 @@ function renderHero(snapshot) {
   `;
 }
 async function render() {
-  let snapshot;
+  let snapshot: any;
   try {
     const activeUrl = await getActiveUrl();
     snapshot = await sendRuntimeMessage({ type: "get-snapshot", activeUrl });
@@ -358,27 +353,27 @@ async function render() {
   renderHero(snapshot);
   renderSparkline(
     trendChart,
-    (snapshot.analytics.byDay || []).map((day) => day.tokens),
-    (snapshot.analytics.byDay || []).map((day) => day.date)
+    (snapshot.analytics.byDay || []).map((day: any) => day.tokens),
+    (snapshot.analytics.byDay || []).map((day: any) => day.date)
   );
   renderBarList(
     modelBreakdown,
-    (snapshot.analytics.byModel || []).slice(0, 4).map((item) => ({ label: item.label, value: item.tokens, meta: `${formatTokens(item.tokens)} \u2022 ${item.prompts} prompts` }))
+    (snapshot.analytics.byModel || []).slice(0, 4).map((item: any) => ({ label: item.label, value: item.tokens, meta: `${formatTokens(item.tokens)} \u2022 ${item.prompts} prompts` }))
   );
-  const currentSuggestions = [];
-  suggestions.innerHTML = currentSuggestions.length ? currentSuggestions.slice(0, 3).map(
-    (item) => `
+  const currentSuggestions: any[] = [];
+  suggestions!.innerHTML = currentSuggestions.length ? currentSuggestions.slice(0, 3).map(
+    (item: any) => `
             <div class="suggestion-card">
               <strong>${escapeHtml(item.title)}</strong>
               <p>${escapeHtml(item.description)} Save about ${formatTokens(item.estimatedSavings)} tokens.</p>
             </div>
           `
   ).join("") : '<div class="empty-chart">No optimization warnings right now.</div>';
-  changeSummary.textContent = buildSessionSummary(snapshot.currentSession, snapshot);
-  document.querySelector("#copy-summary-btn").onclick = async (event) => {
+  changeSummary!.textContent = buildSessionSummary(snapshot.currentSession, snapshot);
+  (document.querySelector("#copy-summary-btn") as HTMLElement)!.onclick = async (event: Event) => {
     const session = snapshot.currentSession;
-    await runButtonAction(event.currentTarget, async () => {
-      const summary = session ? `${SITE_LABELS[session.site]} \u2022 ${session.model}
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
+      const summary = session ? `${SITE_LABELS[session.site as ProviderId]} \u2022 ${session.model}
 Current prompt: ${formatTokens(session.draftAnalysis?.inputTokens)}
 Thread total: ${formatTokens(session.contextAccounting?.visibleThreadTokens)}
 Quota used: ${session.quotaSignal?.percentUsed != null ? formatPercent(session.quotaSignal.percentUsed) : "unknown"}
@@ -386,30 +381,30 @@ Reset: ${session.quotaSignal?.resetAt ? formatClock(session.quotaSignal.resetAt)
       await navigator.clipboard.writeText(summary);
     }, "Copied");
   };
-  document.querySelector("#copy-shorter-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#copy-shorter-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       const shorter = snapshot.currentSession?.currentDraft;
       await navigator.clipboard.writeText(shorter || "");
     }, "Copied");
   };
-  document.querySelector("#dashboard-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#dashboard-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard/dashboard.html") });
     }, "Opened");
   };
-  document.querySelector("#settings-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#settings-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       await chrome.runtime.openOptionsPage();
     }, "Opened");
   };
-  document.querySelector("#toggle-overlay-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#toggle-overlay-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       const response = await sendToActiveTab({ type: "toggle-overlay" });
       if (!response?.ok) throw new Error("No supported AI tab is available.");
     }, "Toggled");
   };
-  document.querySelector("#refresh-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#refresh-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       const response = await sendToActiveTab({ type: "refresh-session" });
       if (!response?.ok) throw new Error("No supported AI tab is available.");
       await render();

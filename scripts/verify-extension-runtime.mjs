@@ -201,7 +201,7 @@ const imported = await dispatch({
   }
 });
 if (!imported?.state || imported.state.usageEvents.length !== 2_500) {
-  throw new Error("import normalization did not enforce the history limit");
+  throw new Error("imported = " + JSON.stringify(imported).slice(0, 1000));
 }
 
 const events = imported.state.usageEvents;

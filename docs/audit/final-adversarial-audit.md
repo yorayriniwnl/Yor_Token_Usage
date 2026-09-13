@@ -30,7 +30,7 @@ All 14 initial critical and high-severity baseline defects (**F-01** through **F
 - **Session Management**: Ephemeral tab state is separated from durable usage history. Live tab drafts and observations are maintained in an in-memory session manager keyed by `(tabId, site)`, preventing multi-tab clobbering across same-provider windows.
 - **Tab Lifecycle Binding**: Clean listeners on `chrome.tabs.onRemoved` ensure ephemeral drafts and observer allocations are reclaimed immediately without memory leaks.
 - **Cross-Chat Isolation**: Content script observation state machine tracks navigation events via `history.pushState` and URL observation. Navigating across chat threads transitions active pending drafts to `ABANDONED`, preventing cross-conversation pollution.
-- **Overlay Isolation**: The DOM overlay renders exclusively inside a closed Shadow DOM container (`.yor-token-usage-root.shadowRoot`), guaranteeing complete CSS reset isolation from the host page's style sheet and zero style bleed into host elements.
+- **Overlay Isolation**: The DOM overlay renders within the host page DOM and applies targeted CSS to minimize style bleed.
 - **Responsive Geometry**: Viewport clamp equations (`Math.min(viewport.width - margin, ...)`) guarantee that the card remains legible and fully within bounds on viewports down to 320px mobile dimensions without layout shifts.
 
 ---

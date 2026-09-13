@@ -1,7 +1,8 @@
-
+import type { UserPreferences, SitePreference, ResetRule, } from '../types/state.js';
+import type { ProviderId } from '../types/models.js';
 
 // src/lib/constants.ts
-var SITE_LABELS = {
+var SITE_LABELS: Record<ProviderId | "generic", string> = {
   chatgpt: "ChatGPT",
   claude: "Claude",
   gemini: "Gemini",
@@ -9,7 +10,7 @@ var SITE_LABELS = {
   grok: "Grok",
   generic: "Other"
 };
-function makeResetRule(kind, description, intervalMinutes) {
+function makeResetRule(kind: any, description: string, intervalMinutes: number | undefined): ResetRule {
   return {
     kind,
     intervalMinutes,
@@ -17,8 +18,8 @@ function makeResetRule(kind, description, intervalMinutes) {
     description
   };
 }
-function makeSiteSettings(site) {
-  const defaults = {
+function makeSiteSettings(site: ProviderId | "generic"): SitePreference {
+  const defaults: Record<string, any> = {
     chatgpt: {
       enabled: true,
       resetRule: makeResetRule("rolling", "Inferred rolling window. Adjust in settings if your plan differs.", 180),
@@ -76,7 +77,7 @@ function makeSiteSettings(site) {
   };
   return structuredClone(defaults[site]);
 }
-var DEFAULT_PREFERENCES = {
+var DEFAULT_PREFERENCES: UserPreferences = {
   theme: "system",
   compactMode: false,
   showOverlay: true,
@@ -99,23 +100,23 @@ var DEFAULT_PREFERENCES = {
 };
 
 // src/lib/utils.ts
-function round(value, digits = 0) {
+function round(value: number, digits: number = 0): number {
   const precision = 10 ** digits;
   return Math.round(value * precision) / precision;
 }
-function truncate(text, limit = 120) {
+function truncate(text: string, limit = 120) {
   return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}\u2026`;
 }
 
 // src/lib/format.ts
-function formatTokens(tokens) {
+function formatTokens(tokens: number | undefined): string {
   if (tokens === void 0 || Number.isNaN(tokens)) return "\u2014";
   const rounded = Math.round(tokens);
   if (rounded >= 999500) return `${round(tokens / 1e6, 2)}M`;
   if (rounded >= 995) return `${round(tokens / 1e3, 1)}K`;
   return `${Math.round(tokens)}`;
 }
-function formatCurrency(value) {
+function formatCurrency(value: number | undefined): string {
   if (value === void 0 || Number.isNaN(value)) return "\u2014";
   return new Intl.NumberFormat(void 0, {
     style: "currency",
@@ -124,7 +125,7 @@ function formatCurrency(value) {
     maximumFractionDigits: value < 1 ? 4 : 2
   }).format(value);
 }
-function formatDateTime(timestamp) {
+function formatDateTime(timestamp: number) {
   if (!timestamp) return "Unknown";
   return new Intl.DateTimeFormat(void 0, {
     month: "short",
@@ -133,33 +134,27 @@ function formatDateTime(timestamp) {
     minute: "2-digit"
   }).format(new Date(timestamp));
 }
-function formatClock(timestamp) {
+function formatClock(timestamp: number | undefined): string {
   if (!timestamp) return "Unknown";
   return new Intl.DateTimeFormat(void 0, {
     hour: "numeric",
     minute: "2-digit"
   }).format(new Date(timestamp));
 }
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[char]);
+function escapeHtml(value: any): string {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"} as Record<string, string>)[char] as string);
 }
-function safeNumber(value, fallback = 0) {
+function safeNumber(value: any, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
 // src/lib/runtime.ts
-async function sendRuntimeMessage(message) {
+async function sendRuntimeMessage<T = any>(message: any): Promise<T> {
   return chrome.runtime.sendMessage(message);
 }
 
 // src/ui/charts.ts
-function renderSparkline(container, values, labels = []) {
+function renderSparkline(container: HTMLElement, values: number[], labels: string[] = []): void {
   const safeValues = values.map((value) => Math.max(0, safeNumber(value)));
   if (!safeValues.length) {
     container.innerHTML = '<div class="empty-chart">No usage data yet.</div>';
@@ -195,14 +190,14 @@ function renderSparkline(container, values, labels = []) {
     </svg>
   `;
 }
-function renderBarList(container, items, formatter = formatTokens) {
+function renderBarList(container: HTMLElement, items: { label: string; value: number; meta?: string }[], formatter: (v: number) => string = formatTokens): void {
   if (!items.length) {
     container.innerHTML = '<div class="empty-chart">Nothing captured yet.</div>';
     return;
   }
-  const max = Math.max(...items.map((item) => safeNumber(item.value)), 1);
+  const max = Math.max(...items.map((item: any) => safeNumber(item.value)), 1);
   container.innerHTML = items.map(
-    (item) => {
+    (item: any) => {
       const value = safeNumber(item.value);
       const width = Math.max(5, value / max * 100);
       return `
@@ -219,21 +214,21 @@ function renderBarList(container, items, formatter = formatTokens) {
 }
 
 // src/dashboard/index.ts
-var metrics = document.querySelector("#metrics");
-var dailyChart = document.querySelector("#daily-chart");
-var weeklyChart = document.querySelector("#weekly-chart");
-var siteBreakdown = document.querySelector("#site-breakdown");
-var modelBreakdown = document.querySelector("#model-breakdown");
-var recentThreads = document.querySelector("#recent-threads");
-var timeline = document.querySelector("#timeline");
-var anomalies = document.querySelector("#anomalies");
-var changeCard = document.querySelector("#change-card");
-function applyPresentation(preferences) {
+var metrics = document.querySelector("#metrics") as HTMLElement;
+var dailyChart = document.querySelector("#daily-chart") as HTMLElement;
+var weeklyChart = document.querySelector("#weekly-chart") as HTMLElement;
+var siteBreakdown = document.querySelector("#site-breakdown") as HTMLElement;
+var modelBreakdown = document.querySelector("#model-breakdown") as HTMLElement;
+var recentThreads = document.querySelector("#recent-threads") as HTMLElement;
+var timeline = document.querySelector("#timeline") as HTMLElement;
+var anomalies = document.querySelector("#anomalies") as HTMLElement;
+var changeCard = document.querySelector("#change-card") as HTMLElement;
+function applyPresentation(preferences: any) {
   const theme = preferences.theme === "system" ? (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark") : preferences.theme;
   document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
   document.documentElement.classList.toggle("compact", preferences.compactMode === true);
 }
-async function runButtonAction(button, task, doneLabel = "Done") {
+async function runButtonAction(button: HTMLElement, task: () => Promise<void>, doneLabel: string = "Done") {
   const originalLabel = button.textContent;
   button.classList.add("is-busy");
   try {
@@ -252,35 +247,35 @@ async function runButtonAction(button, task, doneLabel = "Done") {
   }
 }
 function renderLoading() {
-  metrics.innerHTML = Array.from({ length: 10 }, () => '<article class="metric-card skeleton-metric"><span></span><strong></strong></article>').join("");
-  dailyChart.innerHTML = '<div class="skeleton-chart"></div>';
-  weeklyChart.innerHTML = '<div class="skeleton-chart short"></div>';
-  siteBreakdown.innerHTML = '<div class="skeleton-chart short"></div>';
-  modelBreakdown.innerHTML = '<div class="skeleton-chart short"></div>';
-  recentThreads.innerHTML = '<div class="skeleton-chart short"></div>';
-  timeline.innerHTML = '<div class="skeleton-chart"></div>';
-  anomalies.innerHTML = '<div class="skeleton-chart short"></div>';
-  changeCard.innerHTML = '<div class="skeleton-chart short"></div>';
+  metrics!.innerHTML = Array.from({ length: 10 }, () => '<article class="metric-card skeleton-metric"><span></span><strong></strong></article>').join("");
+  dailyChart!.innerHTML = '<div class="skeleton-chart"></div>';
+  weeklyChart!.innerHTML = '<div class="skeleton-chart short"></div>';
+  siteBreakdown!.innerHTML = '<div class="skeleton-chart short"></div>';
+  modelBreakdown!.innerHTML = '<div class="skeleton-chart short"></div>';
+  recentThreads!.innerHTML = '<div class="skeleton-chart short"></div>';
+  timeline!.innerHTML = '<div class="skeleton-chart"></div>';
+  anomalies!.innerHTML = '<div class="skeleton-chart short"></div>';
+  changeCard!.innerHTML = '<div class="skeleton-chart short"></div>';
 }
-function describeRuntimeError(error) {
+function describeRuntimeError(error: any): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/chrome|sendMessage|extension context|cannot read properties of undefined|is not a function/i.test(message)) {
     return "The extension background service is unavailable. Reload Yor and reopen this dashboard.";
   }
   return message.slice(0, 240) || "The extension could not load this dashboard.";
 }
-function renderError(message) {
-  metrics.innerHTML = '<article class="metric-card"><span>Status</span><strong>Offline</strong></article>';
-  dailyChart.innerHTML = `<div class="empty-chart">${escapeHtml(message)}</div>`;
-  weeklyChart.innerHTML = '<div class="empty-chart">No weekly data loaded.</div>';
-  siteBreakdown.innerHTML = '<div class="empty-chart">No site data loaded.</div>';
-  modelBreakdown.innerHTML = '<div class="empty-chart">No model data loaded.</div>';
-  recentThreads.innerHTML = '<div class="empty-chart">No thread data loaded.</div>';
-  timeline.innerHTML = '<div class="empty-chart">No timeline data loaded.</div>';
-  anomalies.innerHTML = '<div class="empty-chart">No anomaly data loaded.</div>';
-  changeCard.innerHTML = '<div class="empty-chart">Refresh the extension or reopen this dashboard.</div>';
+function renderError(message: string) {
+  metrics!.innerHTML = '<article class="metric-card"><span>Status</span><strong>Offline</strong></article>';
+  dailyChart!.innerHTML = `<div class="empty-chart">${escapeHtml(message)}</div>`;
+  weeklyChart!.innerHTML = '<div class="empty-chart">No weekly data loaded.</div>';
+  siteBreakdown!.innerHTML = '<div class="empty-chart">No site data loaded.</div>';
+  modelBreakdown!.innerHTML = '<div class="empty-chart">No model data loaded.</div>';
+  recentThreads!.innerHTML = '<div class="empty-chart">No thread data loaded.</div>';
+  timeline!.innerHTML = '<div class="empty-chart">No timeline data loaded.</div>';
+  anomalies!.innerHTML = '<div class="empty-chart">No anomaly data loaded.</div>';
+  changeCard!.innerHTML = '<div class="empty-chart">Refresh the extension or reopen this dashboard.</div>';
 }
-function download(filename, content, type) {
+function download(filename: string, content: string, type: string) {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -289,10 +284,10 @@ function download(filename, content, type) {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function renderMetrics(snapshot) {
+function renderMetrics(snapshot: any) {
   const peakDay = snapshot.analytics.peakDay;
   const recentThreadCount = Array.isArray(snapshot.recentThreads) ? snapshot.recentThreads.length : 0;
-  metrics.innerHTML = [
+  metrics!.innerHTML = [
     { label: "Today", value: formatTokens(snapshot.summary.tokensToday) },
     { label: "7-day tokens", value: formatTokens(snapshot.summary.tokensThisWeek) },
     { label: "7-day cost", value: formatCurrency(snapshot.summary.costThisWeek) },
@@ -304,7 +299,7 @@ function renderMetrics(snapshot) {
     { label: "Prompts today", value: `${snapshot.summary.promptsToday}` },
     { label: "Recent threads", value: `${recentThreadCount}` }
   ].map(
-    (item) => `
+    (item: any) => `
         <article class="metric-card">
           <span>${escapeHtml(item.label)}</span>
           <strong>${escapeHtml(item.value)}</strong>
@@ -312,10 +307,10 @@ function renderMetrics(snapshot) {
       `
   ).join("");
 }
-function renderChangeSummary(snapshot) {
+function renderChangeSummary(snapshot: any) {
   const [latest, previous] = Array.isArray(snapshot.analytics.timeline) ? snapshot.analytics.timeline : [];
   if (!latest) {
-    changeCard.innerHTML = '<div class="empty-chart">No session history yet. Send a few prompts on a supported AI site to populate the dashboard.</div>';
+    changeCard!.innerHTML = '<div class="empty-chart">No session history yet. Send a few prompts on a supported AI site to populate the dashboard.</div>';
     return;
   }
   const delta = previous ? latest.totalTokens - previous.totalTokens : latest.totalTokens;
@@ -324,9 +319,9 @@ function renderChangeSummary(snapshot) {
   const measurementLabel = measurement.measurementLevel === "approximation" ? "Approximate" : measurement.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
   const measurementConfidence = Number.isFinite(measurement.confidence) ? `${Math.round(measurement.confidence * 100)}%` : "unknown";
   const measurementMargin = Number.isFinite(measurement.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}%` : "unbounded";
-  changeCard.innerHTML = `
+  changeCard!.innerHTML = `
     <div class="copy-card">
-      <strong>${escapeHtml(`${SITE_LABELS[latest.site] ?? latest.site} \u2022 ${latest.model}`)}</strong>
+      <strong>${escapeHtml(`${SITE_LABELS[latest.site as ProviderId] ?? latest.site} \u2022 ${latest.model}`)}</strong>
       <p>The most recent exchange used ${formatTokens(latest.totalTokens)} tokens, which is ${formatTokens(Math.abs(delta))} ${direction} than the one before it.</p>
     </div>
     <div class="copy-card">
@@ -344,7 +339,7 @@ function renderChangeSummary(snapshot) {
   `;
 }
 async function render() {
-  let snapshot;
+  let snapshot: any;
   try {
     snapshot = await sendRuntimeMessage({ type: "get-snapshot" });
   } catch (error) {
@@ -359,65 +354,65 @@ async function render() {
   renderMetrics(snapshot);
   renderSparkline(
     dailyChart,
-    (Array.isArray(snapshot.analytics.byDay) ? snapshot.analytics.byDay : []).map((day) => day.tokens),
-    (Array.isArray(snapshot.analytics.byDay) ? snapshot.analytics.byDay : []).map((day) => day.date)
+    (Array.isArray(snapshot.analytics.byDay) ? snapshot.analytics.byDay : []).map((day: any) => day.tokens),
+    (Array.isArray(snapshot.analytics.byDay) ? snapshot.analytics.byDay : []).map((day: any) => day.date)
   );
   renderBarList(
     weeklyChart,
-    (Array.isArray(snapshot.analytics.byWeek) ? snapshot.analytics.byWeek : []).map((week) => ({ label: week.date, value: week.tokens, meta: `${safeNumber(week.prompts)} prompts \u2022 ${formatCurrency(safeNumber(week.cost))}` }))
+    (Array.isArray(snapshot.analytics.byWeek) ? snapshot.analytics.byWeek : []).map((week: any) => ({ label: week.date, value: week.tokens, meta: `${safeNumber(week.prompts)} prompts \u2022 ${formatCurrency(safeNumber(week.cost))}` }))
   );
   renderBarList(
     siteBreakdown,
-    (Array.isArray(snapshot.analytics.bySite) ? snapshot.analytics.bySite : []).map((site) => ({ label: site.label, value: site.tokens, meta: `${safeNumber(site.prompts)} prompts \u2022 ${formatCurrency(safeNumber(site.cost))}` }))
+    (Array.isArray(snapshot.analytics.bySite) ? snapshot.analytics.bySite : []).map((site: any) => ({ label: site.label, value: site.tokens, meta: `${safeNumber(site.prompts)} prompts \u2022 ${formatCurrency(safeNumber(site.cost))}` }))
   );
   renderBarList(
     modelBreakdown,
-    (Array.isArray(snapshot.analytics.byModel) ? snapshot.analytics.byModel : []).map((model) => ({ label: model.label, value: model.tokens, meta: `${safeNumber(model.prompts)} prompts \u2022 ${formatCurrency(safeNumber(model.cost))}` }))
+    (Array.isArray(snapshot.analytics.byModel) ? snapshot.analytics.byModel : []).map((model: any) => ({ label: model.label, value: model.tokens, meta: `${safeNumber(model.prompts)} prompts \u2022 ${formatCurrency(safeNumber(model.cost))}` }))
   );
   const recentThreadItems = Array.isArray(snapshot.recentThreads) ? snapshot.recentThreads : [];
-  recentThreads.innerHTML = recentThreadItems.length ? recentThreadItems.map(
-    (thread) => `
+  recentThreads!.innerHTML = recentThreadItems.length ? recentThreadItems.map(
+    (thread: any) => `
             <div class="copy-card">
-              <strong>${escapeHtml(`${SITE_LABELS[thread.site] ?? thread.site} \u2022 ${thread.model}`)}</strong>
+              <strong>${escapeHtml(`${SITE_LABELS[thread.site as ProviderId] ?? thread.site} \u2022 ${thread.model}`)}</strong>
               <p>${formatTokens(thread.totalTokens)} tokens across ${thread.messageCount} messages. Updated ${formatClock(thread.lastUpdated)}.</p>
             </div>
           `
   ).join("") : '<div class="empty-chart">No tracked threads yet.</div>';
   const timelineItems = Array.isArray(snapshot.analytics.timeline) ? snapshot.analytics.timeline : [];
-  timeline.innerHTML = timelineItems.length ? timelineItems.map(
-    (event) => `
+  timeline!.innerHTML = timelineItems.length ? timelineItems.map(
+    (event: any) => `
             <div class="timeline-item">
-              <strong>${escapeHtml(`${SITE_LABELS[event.site] ?? event.site} \u2022 ${event.model}`)}</strong>
+              <strong>${escapeHtml(`${SITE_LABELS[event.site as ProviderId] ?? event.site} \u2022 ${event.model}`)}</strong>
               <p>${escapeHtml(truncate(event.promptPreview, 180))}</p>
               <small>${escapeHtml(`${formatDateTime(event.timestamp)} \u2022 ${formatTokens(event.totalTokens)} tokens \u2022 ${event.status}`)}</small>
             </div>
           `
   ).join("") : '<div class="empty-chart">No timeline yet.</div>';
   const anomalyItems = Array.isArray(snapshot.analytics.anomalies) ? snapshot.analytics.anomalies : [];
-  anomalies.innerHTML = anomalyItems.length ? anomalyItems.map(
-    (event) => `
+  anomalies!.innerHTML = anomalyItems.length ? anomalyItems.map(
+    (event: any) => `
             <div class="copy-card">
-              <strong>${escapeHtml(`${SITE_LABELS[event.site] ?? event.site} spike \u2022 ${formatTokens(event.totalTokens)}`)}</strong>
+              <strong>${escapeHtml(`${SITE_LABELS[event.site as ProviderId] ?? event.site} spike \u2022 ${formatTokens(event.totalTokens)}`)}</strong>
               <p>${escapeHtml(truncate(event.promptPreview, 180))}</p>
             </div>
           `
   ).join("") : '<div class="empty-chart">No anomalies detected.</div>';
   renderChangeSummary(snapshot);
-  document.querySelector("#export-json-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#export-json-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       const payload = await sendRuntimeMessage({ type: "export-data" });
       download("yor-token-usage-export.json", JSON.stringify(payload, null, 2), "application/json");
     }, "Exported");
   };
-  document.querySelector("#export-csv-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#export-csv-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       const dayRows = Array.isArray(snapshot.analytics.byDay) ? snapshot.analytics.byDay : [];
-      const rows = ["date,tokens,prompts,cost", ...dayRows.map((day) => `"${day.date}",${safeNumber(day.tokens)},${safeNumber(day.prompts)},${safeNumber(day.cost).toFixed(4)}`)];
+      const rows = ["date,tokens,prompts,cost", ...dayRows.map((day: any) => `"${day.date}",${safeNumber(day.tokens)},${safeNumber(day.prompts)},${safeNumber(day.cost).toFixed(4)}`)];
       download("yor-token-usage-daily.csv", rows.join("\n"), "text/csv");
     }, "Exported");
   };
-  document.querySelector("#settings-btn").onclick = async (event) => {
-    await runButtonAction(event.currentTarget, async () => {
+  (document.querySelector("#settings-btn") as HTMLElement)!.onclick = async (event: Event) => {
+    await runButtonAction(event.currentTarget as HTMLElement, async () => {
       await chrome.runtime.openOptionsPage();
     }, "Opened");
   };

@@ -235,7 +235,7 @@ export async function toCloudUsageEvent(event: any) {
       occurredAt: new Date(event.timestamp).toISOString(),
       promptTokens: event.promptTokens,
       outputTokens: event.outputTokens,
-      totalTokens: event.totalTokens,
+      totalTokens: ((event.totalTokens ?? 0) ?? 0),
       status: event.status === "rate_limited" ? "RATE_LIMITED" : event.status === "failed" ? "FAILED" : "COMPLETED",
       accuracy: "ESTIMATED",
       schemaVersion: measurement.schemaVersion,
@@ -430,13 +430,13 @@ export async function runCloudSync(generation: any) {
       if (Object.prototype.hasOwnProperty.call(config.syncedEventKeys, eventKey)) continue;
       if (event.timestamp < cutoff) {
         config.syncedEventKeys[eventKey] = "expired";
-        config.skippedExpiredEvents += 1;
+        config.skippedExpiredEvents = (config.skippedExpiredEvents || 0) + 1;
         continue;
       }
       eligible.push(event);
     }
     config.syncedEventKeys = normalizeCloudKeyMap(config.syncedEventKeys);
-    config.skippedExpiredEvents = Math.min(HISTORY_LIMIT, config.skippedExpiredEvents);
+    config.skippedExpiredEvents = Math.min(HISTORY_LIMIT, config.skippedExpiredEvents || 0);
     config = await writeCloudConfigForConnection(config, connectionId, generation);
 
     const maxEvents = CLOUD_MAX_BATCHES_PER_SYNC * 100;

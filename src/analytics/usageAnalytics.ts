@@ -1,19 +1,12 @@
-import { SITE_LABELS, resolveModelProfile, modelLabelForDisplay, DEFAULT_PREFERENCES } from '../lib/constants.js';
+import { SITE_LABELS, modelLabelForDisplay, DEFAULT_PREFERENCES } from '../lib/constants.js';
+import { calculateCost } from '../models/registry.js';
 import { average, median, groupBy, toDateKey, startOfLocalDay, previousLocalDayStart, startOfLocalWeek } from '../lib/utils.js';
-import { nonNegativeNumberOr, usageEventIdentity } from '../storage/store.js';
+import { usageEventIdentity } from '../storage/store.js';
 
     // @ts-ignore
-    // @ts-ignore
 export function eventCost(event: any, preferences: any) {
-  const siteSettings = preferences.sites[event.site] ?? DEFAULT_PREFERENCES.sites.generic;
-  const modelProfile = resolveModelProfile(event.model, event.site);
-  if (modelProfile.estimatedInputCostPer1k == null || modelProfile.estimatedOutputCostPer1k == null) {
-    // Unknown model — return 0 rather than fabricating a cost
-    return 0;
-  }
-  const inputRate = nonNegativeNumberOr(siteSettings.costInputPer1k, modelProfile.estimatedInputCostPer1k);
-  const outputRate = nonNegativeNumberOr(siteSettings.costOutputPer1k, modelProfile.estimatedOutputCostPer1k);
-  return event.promptTokens / 1e3 * inputRate + event.outputTokens / 1e3 * outputRate;
+  const breakdown = calculateCost(event.promptTokens, event.outputTokens, event.model, event.site);
+  return breakdown.totalCost || 0;
 }
     // @ts-ignore
     // @ts-ignore

@@ -1,4 +1,5 @@
-export { resolveModelProfile, calculateCost, normalizeModelKey, MODEL_CATALOG, MODEL_MATCHERS } from '../models/registry.js';
+import { resolveModelProfile, calculateCost, normalizeModelKey, MODEL_CATALOG, MODEL_MATCHERS } from '../models/registry.js';
+export { resolveModelProfile, calculateCost, normalizeModelKey, MODEL_CATALOG, MODEL_MATCHERS };
 export var STATE_KEY = "yor-token-usage-state";
 export var PREFERENCES_SYNC_KEY = "yor-token-usage-preferences";
 export var CLOUD_CONFIG_KEY = "yor-token-usage-cloud-config";
