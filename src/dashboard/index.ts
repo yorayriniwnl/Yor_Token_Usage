@@ -1,4 +1,5 @@
 // @ts-nocheck
+
 // src/lib/constants.ts
 var SITE_LABELS = {
   chatgpt: "ChatGPT",
@@ -330,11 +331,11 @@ function renderChangeSummary(snapshot) {
     </div>
     <div class="copy-card">
       <strong>Current risk</strong>
-      <p>${escapeHtml(snapshot.currentSession?.quota.status === "warning" || snapshot.currentSession?.quota.status === "limited" ? `The active session is approaching its limit, with reset ${snapshot.currentSession.quota.nextReset?.localLabel ?? "unknown"}.` : "No immediate quota pressure detected on the active session.")}</p>
+      <p>${escapeHtml(snapshot.currentSession?.quotaSignal?.status === "warning" || snapshot.currentSession?.quotaSignal?.status === "limited" ? `The active session is approaching its limit, with reset ${snapshot.currentSession.quotaSignal.resetAt ? formatClock(snapshot.currentSession.quotaSignal.resetAt) : "unknown"}.` : "No immediate quota pressure detected on the active session.")}</p>
     </div>
     <div class="copy-card">
       <strong>Optimization signal</strong>
-      <p>${escapeHtml(snapshot.currentSession?.currentEstimate.suggestions[0]?.description ?? "Prompts look healthy. Keep an eye on long pasted context and code blocks.")}</p>
+      <p>Prompts look healthy. Keep an eye on long pasted context and code blocks.</p>
     </div>
     <div class="copy-card">
       <strong>Measurement basis</strong>
