@@ -18,6 +18,7 @@ export interface CostBreakdown {
   outputCost: number | null;
   totalCost: number | null;
   currency: string;
+  notes?: string;
   isApiEquivalent: boolean;
   model: ModelProfile;
 }

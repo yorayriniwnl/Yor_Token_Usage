@@ -81,8 +81,8 @@ export function estimateTokenBreakdown(
   textTokens: number;
   codeTokens: number;
   urlTokens: number;
-  attachmentTokens: number;
-  total: number;
+  attachmentTokens: number | null;
+  total: number | null;
   sections: any[];
   measurement: TokenMeasurementMetadata;
 } {
@@ -93,9 +93,13 @@ export function estimateTokenBreakdown(
     const deterministic = countTokensDeterministic(safeText, options.tokenizer);
     if (deterministic) {
       const attachmentSections = describeAttachmentsToSections(attachments);
-      const attachmentTokens = sum(attachmentSections.map((s) => s.tokens));
-      const total = deterministic.tokens + attachmentTokens;
-      const measurement = createMeasurement({ ...options, tokenizer: options.tokenizer });
+      
+  const attachmentTokensArr = attachmentSections.map((s) => s.tokens);
+  const attachmentTokens = attachmentTokensArr.includes(null) ? null : sum(attachmentTokensArr as number[]);
+  const total = attachmentTokens === null ? null : (deterministic.tokens + attachmentTokens);
+  const measurement = createMeasurement({ ...options, tokenizer: options.tokenizer });
+  if (total === null) measurement.measurementLevel = "unknown";
+
       return {
         textTokens: deterministic.tokens,
         codeTokens: 0,
@@ -123,14 +127,18 @@ export function estimateTokenBreakdown(
   const attachmentSections = describeAttachmentsToSections(attachments);
   const sections = [...textSections, ...attachmentSections];
 
+  
   const textTokens = sum(
-    sections.filter((s) => ["prose", "instruction", "quote"].includes(s.type)).map((s) => s.tokens)
+    sections.filter((s) => ["prose", "instruction", "quote"].includes(s.type)).map((s) => s.tokens as number)
   );
-  const codeTokens = sum(sections.filter((s) => s.type === "code").map((s) => s.tokens));
-  const urlTokens = sum(sections.filter((s) => s.type === "url").map((s) => s.tokens));
-  const attachmentTokens = sum(sections.filter((s) => s.type === "attachment").map((s) => s.tokens));
-  const total = textTokens + codeTokens + urlTokens + attachmentTokens;
+  const codeTokens = sum(sections.filter((s) => s.type === "code").map((s) => s.tokens as number));
+  const urlTokens = sum(sections.filter((s) => s.type === "url").map((s) => s.tokens as number));
+  const attachmentTokensArr = sections.filter((s) => s.type === "attachment").map((s) => s.tokens);
+  const attachmentTokens = attachmentTokensArr.includes(null) ? null : sum(attachmentTokensArr as number[]);
+  const total = attachmentTokens === null ? null : (textTokens + codeTokens + urlTokens + attachmentTokens);
   const measurement = createMeasurement(options);
+  if (total === null) measurement.measurementLevel = "unknown";
+
 
   return {
     textTokens,

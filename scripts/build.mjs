@@ -25,6 +25,12 @@ const targets = [
     target: "es2022"
   },
   {
+    entryPoints: [resolve(root, "src/measurement/gpt-tokenizer.ts")],
+    outfile: resolve(root, "content/gpt-tokenizer.js"),
+    format: "iife",
+    target: "es2022"
+  },
+  {
     entryPoints: [resolve(root, "src/overlay/overlay-position.ts")],
     outfile: resolve(root, "content/overlay-position.js"),
     format: "iife",
@@ -58,6 +64,7 @@ await Promise.all(
     await build({
       ...target,
       bundle: true,
+      external: ["gpt-tokenizer"],
       sourcemap: false,
       legalComments: "none",
       minify: false,

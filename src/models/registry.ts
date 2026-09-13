@@ -278,13 +278,14 @@ export function resolveModelProfile(rawModelName: string, provider: ProviderId =
 }
 
 export function calculateCost(
-  promptTokens: number,
-  outputTokens: number,
+  promptTokens: number | null,
+  outputTokens: number | null,
   modelName: string,
   provider: ProviderId = "generic"
 ): CostBreakdown {
   const profile = resolveModelProfile(modelName, provider);
 
+  
   if (profile.inputCostPer1M === null || profile.outputCostPer1M === null) {
     return {
       promptCost: null,
@@ -295,6 +296,19 @@ export function calculateCost(
       model: profile
     };
   }
+  
+  if (promptTokens === null || outputTokens === null) {
+    return {
+      promptCost: null,
+      outputCost: null,
+      totalCost: null,
+      currency: "USD",
+      isApiEquivalent: true,
+      model: profile,
+      notes: "UnmeasuredCost: token amounts are unknown"
+    };
+  }
+
 
   const promptCost = Number(((promptTokens / 1_000_000) * profile.inputCostPer1M).toFixed(6));
   const outputCost = Number(((outputTokens / 1_000_000) * profile.outputCostPer1M).toFixed(6));

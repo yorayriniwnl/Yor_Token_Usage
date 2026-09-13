@@ -7,3 +7,9 @@ dist/
 .env
 backend/node_modules/
 backend/dist/
+
+background/*.js
+content/*.js
+popup/*.js
+dashboard/*.js
+settings/*.js

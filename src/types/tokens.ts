@@ -64,14 +64,14 @@ export interface ThreadContextAccounting {
 export interface SectionTokenEstimate {
   label: string;
   type: "prose" | "code" | "instruction" | "quote" | "url" | "attachment" | "unknown";
-  tokens: number;
+  tokens: number | null;
   start: number;
   end: number;
   confidenceTier: ConfidenceTier;
 }
 
 export interface DraftAnalysis {
-  inputTokens: number;
+  inputTokens: number | null;
   sections: SectionTokenEstimate[];
   measurement: TokenMeasurementMetadata;
   largePaste: boolean;

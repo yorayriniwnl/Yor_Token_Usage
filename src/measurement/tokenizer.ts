@@ -1,4 +1,16 @@
-import { encode } from "gpt-tokenizer";
+let encodeFn: ((text: string) => number[]) | null = null;
+
+if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.runtime) {
+  const script = document.createElement('script');
+  script.src = chrome.runtime.getURL('content/gpt-tokenizer.js');
+  script.onload = () => {
+    encodeFn = (globalThis as any).GptTokenizer_encode;
+  };
+  document.head.appendChild(script);
+} else {
+  // Fallback for non-browser environments if any
+  import('gpt-tokenizer').then(mod => { encodeFn = mod.encode; }).catch(() => {});
+}
 
 export interface DeterministicTokenizerResult {
   tokens: number;
@@ -22,7 +34,8 @@ export function countTokensDeterministic(
   // Never pretend OpenAI tokenizer applies to Claude or Gemini!
   if (modelTokenizer === "o200k_base" || modelTokenizer === "cl100k_base") {
     try {
-      const tokens = encode(text).length;
+      if (!encodeFn) return null;
+      const tokens = encodeFn(text).length;
       return {
         tokens,
         tokenizer: `gpt-tokenizer@4.0.0 / ${modelTokenizer}`,

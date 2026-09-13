@@ -23,7 +23,11 @@
     "type": "module"
   },
   "options_page": "settings/settings.html",
-  "permissions": ["storage", "alarms", "notifications", "tabs"],
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications"
+  ],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
@@ -51,7 +55,11 @@
         "https://grok.com/*",
         "https://x.com/i/grok*"
       ],
-      "js": ["content/accuracy-engine.js", "content/overlay-position.js", "content/index.js"],
+      "js": [
+        "content/accuracy-engine.js",
+        "content/overlay-position.js",
+        "content/index.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -71,8 +79,20 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["assets/icons/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "assets/icons/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    },
+    {
+      "resources": [
+        "content/gpt-tokenizer.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
