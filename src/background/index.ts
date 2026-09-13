@@ -1,4 +1,5 @@
-// src/background/index.ts
+// @ts-nocheck
+// src/lib/constants.ts
 var STATE_KEY = "yor-token-usage-state";
 var PREFERENCES_SYNC_KEY = "yor-token-usage-preferences";
 var CLOUD_CONFIG_KEY = "yor-token-usage-cloud-config";
@@ -6,7 +7,7 @@ var CLOUD_SESSION_KEY = "yor-token-usage-cloud-session";
 var APP_VERSION = 1;
 var HISTORY_LIMIT = 2500;
 var CLOUD_MAX_BATCHES_PER_SYNC = 5;
-var CLOUD_EVENT_MAX_AGE_MS = 90 * 24 * 60 * 6e4;
+var CLOUD_EVENT_MAX_AGE_MS = 90 * 24 * 60 * 60_000;
 var SITE_LABELS = {
   chatgpt: "ChatGPT",
   claude: "Claude",
@@ -388,6 +389,8 @@ var DEFAULT_PREFERENCES = {
     generic: makeSiteSettings("generic")
   }
 };
+
+// src/lib/utils.ts
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -441,6 +444,8 @@ function startOfLocalWeek(timestamp) {
   date.setHours(0, 0, 0, 0);
   return date.getTime();
 }
+
+// src/lib/format.ts
 function formatTokens(tokens) {
   if (tokens === void 0 || Number.isNaN(tokens)) return "\u2014";
   if (tokens >= 1e6) return `${round(tokens / 1e6, 2)}M`;
@@ -451,6 +456,8 @@ function formatPercent(value) {
   if (value === void 0 || Number.isNaN(value)) return "\u2014";
   return `${round(clamp(value, 0, 100), value > 10 ? 0 : 1)}%`;
 }
+
+// src/analytics/usageAnalytics.ts
 function eventCost(event, preferences) {
   const siteSettings = preferences.sites[event.site] ?? DEFAULT_PREFERENCES.sites.generic;
   const modelProfile = resolveModelProfile(event.model, event.site);
@@ -545,7 +552,9 @@ function buildAnalytics(events, preferences, now = Date.now()) {
   const byWeek = fillWindow(eightWeeksAgo, 8, 7 * 864e5, weekMap);
   const byModel = aggregateBy(sorted, (event) => event.model, preferences, modelLabelForDisplay);
   const bySite = aggregateBy(sorted, (event) => event.site, preferences, (key) => SITE_LABELS[key] ?? key);
-  const peakDay = byDay.some((day) => day.prompts > 0 || day.tokens > 0) ? [...byDay].sort((a, b) => b.tokens - a.tokens)[0] : void 0;
+  const peakDay = byDay.some((day) => day.prompts > 0 || day.tokens > 0)
+    ? [...byDay].sort((a, b) => b.tokens - a.tokens)[0]
+    : void 0;
   const averagePromptTokens = average(sorted.map((event) => event.promptTokens));
   const activeDays = byDay.slice(-7).filter((day) => day.prompts > 0 || day.tokens > 0);
   const burnRate = average(activeDays.map((day) => day.tokens));
@@ -611,6 +620,8 @@ function getSnapshotAnalytics(state, now) {
 function invalidateSnapshotAnalytics() {
   snapshotAnalyticsCache = void 0;
 }
+
+// src/storage/store.ts
 var memoryStorage = /* @__PURE__ */ new Map();
 var memorySessionStorage = /* @__PURE__ */ new Map();
 var stateQueue = Promise.resolve();
@@ -754,7 +765,7 @@ function normalizeMeasurement(value, fallback = {}) {
     measurementMethod: boundedNonEmptyString(raw.measurementMethod, 80, fallback.measurementMethod ?? base.measurementMethod),
     measurementLevel: unverifiedAuthoritativeClaim ? "unknown" : levels.includes(rawLevel) ? rawLevel : fallback.measurementLevel ?? base.measurementLevel,
     confidence: unverifiedAuthoritativeClaim ? 0 : clamp(finiteNumberOr(raw.confidence, fallback.confidence ?? base.confidence), 0, 1),
-    errorMarginPercent: unverifiedAuthoritativeClaim ? 100 : clamp(nonNegativeNumberOr(raw.errorMarginPercent, fallback.errorMarginPercent ?? base.errorMarginPercent), 0, 1e3),
+    errorMarginPercent: unverifiedAuthoritativeClaim ? 100 : clamp(nonNegativeNumberOr(raw.errorMarginPercent, fallback.errorMarginPercent ?? base.errorMarginPercent), 0, 1000),
     provider: boundedNonEmptyString(raw.provider, 64, fallback.provider ?? base.provider),
     model: boundedNonEmptyString(raw.model, 120, fallback.model ?? base.model),
     tokenizer: boundedNonEmptyString(raw.tokenizer, 80, base.tokenizer),
@@ -767,7 +778,7 @@ function normalizePromptSections(value) {
   return Array.isArray(value) ? value.slice(0, 50).filter(isPlainObject).map((section) => ({
     label: boundedNonEmptyString(section.label, 160, "section"),
     type: sectionTypes.includes(section.type) ? section.type : "prose",
-    tokens: boundedNonNegativeNumberOr(section.tokens, 4e6)
+    tokens: boundedNonNegativeNumberOr(section.tokens, 4_000_000)
   })) : [];
 }
 function normalizePromptSuggestions(value) {
@@ -777,20 +788,20 @@ function normalizePromptSuggestions(value) {
     id: boundedNonEmptyString(suggestion.id, 64, `suggestion-${index + 1}`),
     title: boundedNonEmptyString(suggestion.title, 160, "Suggestion"),
     description: boundedString(suggestion.description, 240),
-    estimatedSavings: boundedNonNegativeNumberOr(suggestion.estimatedSavings, 4e6),
+    estimatedSavings: boundedNonNegativeNumberOr(suggestion.estimatedSavings, 4_000_000),
     severity: severities.includes(suggestion.severity) ? suggestion.severity : "low",
     applyVariant: variants.includes(suggestion.applyVariant) ? suggestion.applyVariant : "balanced"
   })) : [];
 }
-function normalizePromptTextList(value, maxItems = 6, maxLength = 2e3) {
+function normalizePromptTextList(value, maxItems = 6, maxLength = 2_000) {
   return Array.isArray(value) ? value.slice(0, maxItems).filter((item) => typeof item === "string").map((item) => boundedString(item, maxLength)).filter(Boolean) : [];
 }
 function normalizePromptVariants(value) {
   const variants = isPlainObject(value) ? value : {};
   return {
-    shorter: boundedString(variants.shorter, 25e4),
-    balanced: boundedString(variants.balanced, 25e4),
-    maxDetail: boundedString(variants.maxDetail, 25e4)
+    shorter: boundedString(variants.shorter, 250_000),
+    balanced: boundedString(variants.balanced, 250_000),
+    maxDetail: boundedString(variants.maxDetail, 250_000)
   };
 }
 function boundedFutureTimestamp(value, maxFutureDays = 366) {
@@ -805,9 +816,9 @@ function normalizeSessionResetRule(value) {
   const anchorLocalTime = typeof raw.anchorLocalTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw.anchorLocalTime) ? raw.anchorLocalTime : void 0;
   return {
     kind: resetKinds.includes(raw.kind) ? raw.kind : "unknown",
-    ...intervalMinutes !== void 0 ? { intervalMinutes } : {},
-    ...anchorLocalTime ? { anchorLocalTime } : {},
-    ...dayOfWeek !== void 0 ? { dayOfWeek } : {},
+    ...(intervalMinutes !== void 0 ? { intervalMinutes } : {}),
+    ...(anchorLocalTime ? { anchorLocalTime } : {}),
+    ...(dayOfWeek !== void 0 ? { dayOfWeek } : {}),
     inferred: raw.inferred === true,
     description: boundedString(raw.description, 240)
   };
@@ -821,10 +832,10 @@ function normalizeResetPrediction(value) {
   const windowEnd = boundedFutureTimestamp(value.windowEnd);
   const remainingMs = Number.isFinite(value.remainingMs) ? clamp(value.remainingMs, 0, 366 * 864e5) : void 0;
   return {
-    ...resetAt !== void 0 ? { resetAt } : {},
-    ...windowStart !== void 0 ? { windowStart } : {},
-    ...windowEnd !== void 0 ? { windowEnd } : {},
-    ...remainingMs !== void 0 ? { remainingMs } : {},
+    ...(resetAt !== void 0 ? { resetAt } : {}),
+    ...(windowStart !== void 0 ? { windowStart } : {}),
+    ...(windowEnd !== void 0 ? { windowEnd } : {}),
+    ...(remainingMs !== void 0 ? { remainingMs } : {}),
     localLabel: boundedString(value.localLabel, 160, "Unknown"),
     kind: kinds.includes(value.kind) ? value.kind : "unknown",
     confidence: confidences.includes(value.confidence) ? value.confidence : "inferred",
@@ -838,20 +849,20 @@ function normalizeSessionQuota(value) {
   const nextReset = normalizeResetPrediction(quota.nextReset);
   const explicitResetAt = boundedFutureTimestamp(quota.explicitResetAt);
   return {
-    usedTokens: boundedNonNegativeNumberOr(quota.usedTokens, 4e9),
-    remainingTokens: Number.isFinite(quota.remainingTokens) ? Math.min(4e9, Math.max(0, quota.remainingTokens)) : void 0,
+    usedTokens: boundedNonNegativeNumberOr(quota.usedTokens, 4_000_000_000),
+    remainingTokens: Number.isFinite(quota.remainingTokens) ? Math.min(4_000_000_000, Math.max(0, quota.remainingTokens)) : void 0,
     percentUsed: Number.isFinite(quota.percentUsed) ? clamp(quota.percentUsed, 0, 100) : void 0,
     status: statuses.includes(quota.status) ? quota.status : "unknown",
     accuracy: accuracies.includes(quota.accuracy) ? quota.accuracy : "inferred",
-    ...typeof quota.quotaTier === "string" ? { quotaTier: boundedString(quota.quotaTier, 80) } : {},
-    ...isPlainObject(quota.resetRule) ? { resetRule: normalizeSessionResetRule(quota.resetRule) } : {},
-    ...explicitResetAt !== void 0 ? { explicitResetAt } : {},
-    ...nextReset ? { nextReset } : {}
+    ...(typeof quota.quotaTier === "string" ? { quotaTier: boundedString(quota.quotaTier, 80) } : {}),
+    ...(isPlainObject(quota.resetRule) ? { resetRule: normalizeSessionResetRule(quota.resetRule) } : {}),
+    ...(explicitResetAt !== void 0 ? { explicitResetAt } : {}),
+    ...(nextReset ? { nextReset } : {})
   };
 }
 function timestampOr(value, fallback = Date.now()) {
   if (!Number.isFinite(value) || value <= 0) return fallback;
-  return Math.min(value, Date.now() + 5 * 6e4);
+  return Math.min(value, Date.now() + 5 * 60_000);
 }
 function createEmptySessions() {
   return {
@@ -875,17 +886,17 @@ function mergeSiteSettings(site, partialSite) {
   return {
     ...defaults,
     enabled: typeof partial.enabled === "boolean" ? partial.enabled : defaults.enabled,
-    tokenBudget: optionalNumberInRange(partial.tokenBudget, 0, 4e9),
-    contextWindow: optionalNumberInRange(partial.contextWindow, 1, 1e7),
+    tokenBudget: optionalNumberInRange(partial.tokenBudget, 0, 4_000_000_000),
+    contextWindow: optionalNumberInRange(partial.contextWindow, 1, 10_000_000),
     quotaTierLabel: typeof partial.quotaTierLabel === "string" ? partial.quotaTierLabel.slice(0, 80) : defaults.quotaTierLabel,
-    costInputPer1k: optionalNumberInRange(partial.costInputPer1k, 0, 1e3),
-    costOutputPer1k: optionalNumberInRange(partial.costOutputPer1k, 0, 1e3),
+    costInputPer1k: optionalNumberInRange(partial.costInputPer1k, 0, 1000),
+    costOutputPer1k: optionalNumberInRange(partial.costOutputPer1k, 0, 1000),
     resetRule: {
       ...defaults.resetRule,
       kind: resetKind,
-      ...intervalMinutes !== void 0 ? { intervalMinutes } : {},
-      ...anchorLocalTime ? { anchorLocalTime } : {},
-      ...dayOfWeek !== void 0 ? { dayOfWeek } : {},
+      ...(intervalMinutes !== void 0 ? { intervalMinutes } : {}),
+      ...(anchorLocalTime ? { anchorLocalTime } : {}),
+      ...(dayOfWeek !== void 0 ? { dayOfWeek } : {}),
       inferred: partialResetRule.inferred !== false,
       description: typeof partialResetRule.description === "string" ? partialResetRule.description.slice(0, 240) : defaults.resetRule.description
     }
@@ -909,7 +920,7 @@ function mergePreferences(partial) {
     alerts: {
       ...DEFAULT_PREFERENCES.alerts,
       quotaWarningPercent: clamp(finiteNumberOr(partialAlerts.quotaWarningPercent, DEFAULT_PREFERENCES.alerts.quotaWarningPercent), 1, 100),
-      largePromptTokens: clamp(finiteNumberOr(partialAlerts.largePromptTokens, DEFAULT_PREFERENCES.alerts.largePromptTokens), 100, 2e6),
+      largePromptTokens: clamp(finiteNumberOr(partialAlerts.largePromptTokens, DEFAULT_PREFERENCES.alerts.largePromptTokens), 100, 2_000_000),
       anomalyMultiplier: clamp(finiteNumberOr(partialAlerts.anomalyMultiplier, DEFAULT_PREFERENCES.alerts.anomalyMultiplier), 1, 10),
       desktopNotifications: partialAlerts.desktopNotifications !== false,
       badgeMode: ["percent", "remaining", "off"].includes(partialAlerts.badgeMode) ? partialAlerts.badgeMode : DEFAULT_PREFERENCES.alerts.badgeMode
@@ -945,11 +956,11 @@ function normalizeSession(session) {
     site,
     model,
     threadId: boundedString(session.threadId, 256, "default"),
-    currentInput: boundedString(session.currentInput, 25e4),
+    currentInput: boundedString(session.currentInput, 250_000),
     currentEstimate: {
-      inputTokens: boundedNonNegativeNumberOr(currentEstimate.inputTokens, 2e6),
-      outputTokensEstimate: boundedNonNegativeNumberOr(currentEstimate.outputTokensEstimate, 2e6),
-      totalTokens: boundedNonNegativeNumberOr(currentEstimate.totalTokens, 4e6),
+      inputTokens: boundedNonNegativeNumberOr(currentEstimate.inputTokens, 2_000_000),
+      outputTokensEstimate: boundedNonNegativeNumberOr(currentEstimate.outputTokensEstimate, 2_000_000),
+      totalTokens: boundedNonNegativeNumberOr(currentEstimate.totalTokens, 4_000_000),
       sections: normalizePromptSections(currentEstimate.sections),
       suggestions: normalizePromptSuggestions(currentEstimate.suggestions),
       variants: normalizePromptVariants(currentEstimate.variants),
@@ -963,16 +974,16 @@ function normalizeSession(session) {
       threadId: boundedString(currentThread.threadId, 256, boundedString(session.threadId, 256, "default")),
       site,
       model: boundedString(currentThread.model, 120, boundedString(session.model, 120, "generic")),
-      messageCount: boundedNonNegativeNumberOr(currentThread.messageCount, 1e4),
-      promptTokens: boundedNonNegativeNumberOr(currentThread.promptTokens, 8e6),
-      outputTokens: boundedNonNegativeNumberOr(currentThread.outputTokens, 8e6),
-      totalTokens: boundedNonNegativeNumberOr(currentThread.totalTokens, 16e6),
+      messageCount: boundedNonNegativeNumberOr(currentThread.messageCount, 10_000),
+      promptTokens: boundedNonNegativeNumberOr(currentThread.promptTokens, 8_000_000),
+      outputTokens: boundedNonNegativeNumberOr(currentThread.outputTokens, 8_000_000),
+      totalTokens: boundedNonNegativeNumberOr(currentThread.totalTokens, 16_000_000),
       lastUpdated: timestampOr(currentThread.lastUpdated),
-      contextGrowth: Array.isArray(currentThread.contextGrowth) ? currentThread.contextGrowth.slice(-25).filter(Number.isFinite).map((value) => boundedNonNegativeNumberOr(value, 16e6)) : []
+      contextGrowth: Array.isArray(currentThread.contextGrowth) ? currentThread.contextGrowth.slice(-25).filter(Number.isFinite).map((value) => boundedNonNegativeNumberOr(value, 16_000_000)) : []
     } : void 0,
     quota: normalizeSessionQuota(quota),
     lastUpdated: timestampOr(session.lastUpdated),
-    lastSeenUrl: boundedString(session.lastSeenUrl, 2048),
+    lastSeenUrl: boundedString(session.lastSeenUrl, 2_048),
     adapterConfidence: clamp(finiteNumberOr(session.adapterConfidence, 0), 0, 1)
   };
 }
@@ -990,9 +1001,9 @@ function normalizeUsageEvent(event) {
   if (!isPlainObject(event)) return void 0;
   const site = normalizeSite(event.site);
   const model = boundedString(event.model, 120, "generic");
-  const promptTokens = boundedNonNegativeNumberOr(event.promptTokens, 2e6);
-  const outputTokens = boundedNonNegativeNumberOr(event.outputTokens, 2e6);
-  const totalTokens = Math.min(4e6, Math.max(promptTokens + outputTokens, boundedNonNegativeNumberOr(event.totalTokens, 4e6, promptTokens + outputTokens)));
+  const promptTokens = boundedNonNegativeNumberOr(event.promptTokens, 2_000_000);
+  const outputTokens = boundedNonNegativeNumberOr(event.outputTokens, 2_000_000);
+  const totalTokens = Math.min(4_000_000, Math.max(promptTokens + outputTokens, boundedNonNegativeNumberOr(event.totalTokens, 4_000_000, promptTokens + outputTokens)));
   return {
     site,
     model,
@@ -1002,11 +1013,11 @@ function normalizeUsageEvent(event) {
     promptTokens,
     outputTokens,
     totalTokens,
-    promptChars: boundedNonNegativeNumberOr(event.promptChars, 1e7, boundedString(event.promptPreview, 140).length),
-    outputChars: boundedNonNegativeNumberOr(event.outputChars, 1e7),
+    promptChars: boundedNonNegativeNumberOr(event.promptChars, 10_000_000, boundedString(event.promptPreview, 140).length),
+    outputChars: boundedNonNegativeNumberOr(event.outputChars, 10_000_000),
     status: ["completed", "rate_limited", "failed"].includes(event.status) ? event.status : "completed",
     promptPreview: boundedString(event.promptPreview, 140),
-    optimizerSavings: boundedNonNegativeNumberOr(event.optimizerSavings, 4e6),
+    optimizerSavings: boundedNonNegativeNumberOr(event.optimizerSavings, 4_000_000),
     rateLimitMessage: boundedString(event.rateLimitMessage, 500) || void 0,
     resetAt: Number.isFinite(event.resetAt) && event.resetAt > 0 ? timestampOr(event.resetAt) : void 0,
     measurement: normalizeMeasurement(event.measurement, { provider: site, model })
@@ -1321,6 +1332,8 @@ async function clearLocalHistory() {
     }
   }));
 }
+
+// src/cloud/cloudSync.ts
 function normalizeCloudBaseUrl(value) {
   const raw = boundedString(value, 2048).trim();
   if (!raw) throw new Error("Enter the HTTPS URL for the Yor backend.");
@@ -1363,9 +1376,9 @@ function normalizeCloudConfig(raw) {
     deviceId: boundedString(source.account.deviceId, 128)
   } : void 0;
   const quota = isPlainObject(source.quota) ? {
-    usedTokens: boundedNonNegativeNumberOr(source.quota.usedTokens, 4e9),
-    tokenCap: boundedNonNegativeNumberOr(source.quota.tokenCap, 4e9),
-    remainingTokens: boundedNonNegativeNumberOr(source.quota.remainingTokens, 4e9),
+    usedTokens: boundedNonNegativeNumberOr(source.quota.usedTokens, 4_000_000_000),
+    tokenCap: boundedNonNegativeNumberOr(source.quota.tokenCap, 4_000_000_000),
+    remainingTokens: boundedNonNegativeNumberOr(source.quota.remainingTokens, 4_000_000_000),
     limited: source.quota.limited === true,
     periodEnd: boundedString(source.quota.periodEnd, 64)
   } : void 0;
@@ -1436,14 +1449,14 @@ function cloudDeviceHeaders(config) {
     "x-platform": boundedString(runtimeNavigator.userAgentData?.platform ?? runtimeNavigator.platform, 64, "unknown")
   };
 }
-var CloudRequestError = class extends Error {
+class CloudRequestError extends Error {
   constructor(message, statusCode, code) {
     super(message);
     this.name = "CloudRequestError";
     this.statusCode = statusCode;
     this.code = code;
   }
-};
+}
 var cloudConnectionGeneration = 0;
 var activeCloudControllers = /* @__PURE__ */ new Set();
 function cancelActiveCloudRequests() {
@@ -1466,7 +1479,7 @@ async function cloudRequest(config, path, options = {}) {
   if (!accessToken) throw new CloudRequestError("Cloud session expired. Connect again with a fresh access token.", 401, "cloud_session_missing");
   const controller = new AbortController();
   activeCloudControllers.add(controller);
-  const timeout = setTimeout(() => controller.abort(), 1e4);
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(`${config.apiBaseUrl}${path}`, {
       method: options.method ?? "GET",
@@ -1474,10 +1487,10 @@ async function cloudRequest(config, path, options = {}) {
         accept: "application/json",
         authorization: `Bearer ${accessToken}`,
         ...cloudDeviceHeaders(config),
-        ...options.body !== void 0 ? { "content-type": "application/json" } : {},
-        ...options.headers ?? {}
+        ...(options.body !== void 0 ? { "content-type": "application/json" } : {}),
+        ...(options.headers ?? {})
       },
-      ...options.body !== void 0 ? { body: JSON.stringify(options.body) } : {},
+      ...(options.body !== void 0 ? { body: JSON.stringify(options.body) } : {}),
       cache: "no-store",
       credentials: "omit",
       redirect: "error",
@@ -1697,7 +1710,7 @@ async function runCloudSync(generation) {
   try {
     if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
     const state = await getState();
-    const cutoff = Date.now() - CLOUD_EVENT_MAX_AGE_MS + 6e4;
+    const cutoff = Date.now() - CLOUD_EVENT_MAX_AGE_MS + 60_000;
     const eligible = [];
     for (const event of state.usageEvents) {
       const eventKey = usageEventIdentity(event);
@@ -1712,6 +1725,7 @@ async function runCloudSync(generation) {
     config.syncedEventKeys = normalizeCloudKeyMap(config.syncedEventKeys);
     config.skippedExpiredEvents = Math.min(HISTORY_LIMIT, config.skippedExpiredEvents);
     config = await writeCloudConfigForConnection(config, connectionId, generation);
+
     const maxEvents = CLOUD_MAX_BATCHES_PER_SYNC * 100;
     const eventsToUpload = eligible.slice(0, maxEvents);
     for (let offset = 0; offset < eventsToUpload.length; offset += 100) {
@@ -1731,6 +1745,7 @@ async function runCloudSync(generation) {
       config.syncedClientEventIds = normalizeCloudKeyMap(config.syncedClientEventIds);
       config = await writeCloudConfigForConnection(config, connectionId, generation);
     }
+
     const remoteState = await cloudRequest(config, "/v1/sync/state", {
       method: "POST",
       body: { includeUsage: true, maxEvents: 500 }
@@ -1762,6 +1777,8 @@ function syncCloudState() {
   cloudSyncQueue = operation.then(() => void 0, () => void 0);
   return operation;
 }
+
+// src/background/service-worker.ts
 var ALARM_NAME = "yor-token-usage-refresh";
 async function ensureState() {
   return updateState(async (state) => state);
@@ -1984,3 +2001,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })();
   return true;
 });
+
+export {};

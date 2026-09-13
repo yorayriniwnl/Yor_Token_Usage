@@ -2,6 +2,8 @@
   "name": "yor-token-usage-extension",
   "private": true,
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
     "design:check": "node scripts/check-design.mjs",
     "accuracy:benchmark": "node scripts/benchmark-accuracy.mjs",
     "reset:check": "node scripts/verify-reset-predictor.mjs",
@@ -11,7 +13,11 @@
     "capture:check": "node scripts/verify-capture-browser.cjs"
   },
   "devDependencies": {
+    "@types/chrome": "^0.2.9",
+    "@types/node": "^22.20.2",
+    "esbuild": "^0.28.2",
     "gpt-tokenizer": "4.0.0",
-    "playwright": "^1.62.1"
+    "playwright": "^1.62.1",
+    "typescript": "^5.6.3"
   }
 }

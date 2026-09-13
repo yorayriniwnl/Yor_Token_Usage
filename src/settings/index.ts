@@ -1,5 +1,4 @@
-// src/settings/index.ts
-var SITE_LABELS = {
+const SITE_LABELS: Record<string, string> = {
   chatgpt: "ChatGPT",
   claude: "Claude",
   gemini: "Gemini",
@@ -7,25 +6,36 @@ var SITE_LABELS = {
   grok: "Grok",
   generic: "Generic"
 };
-var SITE_ORDER = ["chatgpt", "claude", "gemini", "perplexity", "grok", "generic"];
-var currentPreferences = null;
-async function sendMessage(message) {
+
+const SITE_ORDER = ["chatgpt", "claude", "gemini", "perplexity", "grok", "generic"];
+
+let currentPreferences: any = null;
+
+async function sendMessage<T = any>(message: any): Promise<T> {
   return new Promise((resolve) => {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
       chrome.runtime.sendMessage(message, (response) => resolve(response));
     } else {
-      resolve(null);
+      resolve(null as any);
     }
   });
 }
-function escapeHtml(str) {
-  return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+function escapeHtml(str: string): string {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
-function renderSiteCard(site, sitePref) {
+
+function renderSiteCard(site: string, sitePref: any): string {
   const resetRule = sitePref?.resetRule || { kind: "rolling", inferred: true };
   const resetKind = resetRule.kind || "rolling";
   const anchorLocalTime = resetRule.anchorLocalTime || "00:00";
   const dayOfWeek = resetRule.dayOfWeek ?? 1;
+
   return `
     <article class="site-card" data-site="${escapeHtml(site)}">
       <div>
@@ -49,11 +59,13 @@ function renderSiteCard(site, sitePref) {
     </article>
   `;
 }
+
 async function loadSettings() {
   const snapshot = await sendMessage({ type: "get-snapshot" });
   const prefs = snapshot?.state?.preferences || {};
   currentPreferences = structuredClone(prefs);
-  const themeSelect = document.getElementById("theme");
+
+  const themeSelect = document.getElementById("theme") as HTMLSelectElement | null;
   if (themeSelect) {
     themeSelect.innerHTML = `
       <option value="system">System default</option>
@@ -62,7 +74,8 @@ async function loadSettings() {
     `;
     themeSelect.value = prefs.theme || "system";
   }
-  const privacySelect = document.getElementById("privacy-mode");
+
+  const privacySelect = document.getElementById("privacy-mode") as HTMLSelectElement | null;
   if (privacySelect) {
     privacySelect.innerHTML = `
       <option value="local-only">Device only (Private)</option>
@@ -70,7 +83,8 @@ async function loadSettings() {
     `;
     privacySelect.value = prefs.privacyMode || "local-only";
   }
-  const badgeSelect = document.getElementById("badge-mode");
+
+  const badgeSelect = document.getElementById("badge-mode") as HTMLSelectElement | null;
   if (badgeSelect) {
     badgeSelect.innerHTML = `
       <option value="percent">Percentage</option>
@@ -79,31 +93,43 @@ async function loadSettings() {
     `;
     badgeSelect.value = prefs.alerts?.badgeMode || "percent";
   }
-  const showOverlay = document.getElementById("show-overlay");
+
+  const showOverlay = document.getElementById("show-overlay") as HTMLInputElement | null;
   if (showOverlay) showOverlay.checked = prefs.showOverlay !== false;
-  const compactMode = document.getElementById("compact-mode");
+
+  const compactMode = document.getElementById("compact-mode") as HTMLInputElement | null;
   if (compactMode) compactMode.checked = prefs.compactMode === true;
-  const desktopNotifications = document.getElementById("desktop-notifications");
+
+  const desktopNotifications = document.getElementById("desktop-notifications") as HTMLInputElement | null;
   if (desktopNotifications) desktopNotifications.checked = prefs.alerts?.desktopNotifications !== false;
-  const quotaWarning = document.getElementById("quota-warning-percent");
+
+  const quotaWarning = document.getElementById("quota-warning-percent") as HTMLInputElement | null;
   if (quotaWarning) quotaWarning.value = String(prefs.alerts?.quotaWarningPercent ?? 80);
-  const largePrompt = document.getElementById("large-prompt-tokens");
+
+  const largePrompt = document.getElementById("large-prompt-tokens") as HTMLInputElement | null;
   if (largePrompt) largePrompt.value = String(prefs.alerts?.largePromptTokens ?? 2500);
-  const anomaly = document.getElementById("anomaly-multiplier");
+
+  const anomaly = document.getElementById("anomaly-multiplier") as HTMLInputElement | null;
   if (anomaly) anomaly.value = String(prefs.alerts?.anomalyMultiplier ?? 2.5);
+
+  // Render site cards
   const siteContainer = document.getElementById("site-settings");
   if (siteContainer) {
     siteContainer.innerHTML = SITE_ORDER.map((site) => renderSiteCard(site, prefs.sites?.[site])).join("");
   }
+
+  // Cloud status
   await updateCloudStatus();
 }
+
 async function updateCloudStatus() {
   const statusRes = await sendMessage({ type: "cloud-status" });
   const pill = document.getElementById("cloud-status-pill");
-  const connectBtn = document.getElementById("cloud-connect-btn");
-  const syncBtn = document.getElementById("cloud-sync-btn");
-  const disconnectBtn = document.getElementById("cloud-disconnect-btn");
-  const apiUrlInput = document.getElementById("cloud-api-url");
+  const connectBtn = document.getElementById("cloud-connect-btn") as HTMLButtonElement | null;
+  const syncBtn = document.getElementById("cloud-sync-btn") as HTMLButtonElement | null;
+  const disconnectBtn = document.getElementById("cloud-disconnect-btn") as HTMLButtonElement | null;
+  const apiUrlInput = document.getElementById("cloud-api-url") as HTMLInputElement | null;
+
   if (statusRes?.connected && statusRes.config) {
     if (pill) {
       pill.textContent = "Cloud Sync Active";
@@ -123,38 +149,51 @@ async function updateCloudStatus() {
     if (disconnectBtn) disconnectBtn.disabled = true;
   }
 }
+
 async function saveCurrentSettings() {
-  const theme = document.getElementById("theme")?.value;
-  const privacyMode = document.getElementById("privacy-mode")?.value;
-  const showOverlay = document.getElementById("show-overlay")?.checked;
-  const compactMode = document.getElementById("compact-mode")?.checked;
-  const desktopNotifications = document.getElementById("desktop-notifications")?.checked;
-  const quotaWarningPercent = Number(document.getElementById("quota-warning-percent")?.value) || 80;
-  const largePromptTokens = Number(document.getElementById("large-prompt-tokens")?.value) || 2500;
-  const anomalyMultiplier = Number(document.getElementById("anomaly-multiplier")?.value) || 2.5;
-  const badgeMode = document.getElementById("badge-mode")?.value || "percent";
-  const updatedSites = {};
+  const theme = (document.getElementById("theme") as HTMLSelectElement)?.value as any;
+  const privacyMode = (document.getElementById("privacy-mode") as HTMLSelectElement)?.value as any;
+  const showOverlay = (document.getElementById("show-overlay") as HTMLInputElement)?.checked;
+  const compactMode = (document.getElementById("compact-mode") as HTMLInputElement)?.checked;
+  const desktopNotifications = (document.getElementById("desktop-notifications") as HTMLInputElement)?.checked;
+  const quotaWarningPercent = Number((document.getElementById("quota-warning-percent") as HTMLInputElement)?.value) || 80;
+  const largePromptTokens = Number((document.getElementById("large-prompt-tokens") as HTMLInputElement)?.value) || 2500;
+  const anomalyMultiplier = Number((document.getElementById("anomaly-multiplier") as HTMLInputElement)?.value) || 2.5;
+  const badgeMode = ((document.getElementById("badge-mode") as HTMLSelectElement)?.value as any) || "percent";
+
+  const updatedSites: Record<string, any> = {};
+
   for (const site of SITE_ORDER) {
     const card = document.querySelector(`.site-card[data-site="${site}"]`);
     const initialSitePref = currentPreferences?.sites?.[site] || {};
     const initialRule = initialSitePref?.resetRule || { kind: "rolling", inferred: true };
+
     if (!card) {
       updatedSites[site] = initialSitePref;
       continue;
     }
-    const enabled = card.querySelector('[data-key="enabled"]')?.checked ?? true;
-    const resetKind = card.querySelector('[data-key="resetKind"]')?.value || initialRule.kind;
-    const anchorLocalTime = card.querySelector('[data-key="anchorLocalTime"]')?.value || "00:00";
-    const dayOfWeekVal = card.querySelector('[data-key="dayOfWeek"]')?.value;
-    const dayOfWeek = dayOfWeekVal !== "" && dayOfWeekVal !== void 0 ? Number(dayOfWeekVal) : initialRule.dayOfWeek ?? 1;
-    const intervalMinutesVal = card.querySelector('[data-key="intervalMinutes"]')?.value;
+
+    const enabled = (card.querySelector('[data-key="enabled"]') as HTMLInputElement)?.checked ?? true;
+    const resetKind = (card.querySelector('[data-key="resetKind"]') as HTMLSelectElement)?.value || initialRule.kind;
+    const anchorLocalTime = (card.querySelector('[data-key="anchorLocalTime"]') as HTMLInputElement)?.value || "00:00";
+    const dayOfWeekVal = (card.querySelector('[data-key="dayOfWeek"]') as HTMLInputElement)?.value;
+    const dayOfWeek = dayOfWeekVal !== "" && dayOfWeekVal !== undefined ? Number(dayOfWeekVal) : (initialRule.dayOfWeek ?? 1);
+    const intervalMinutesVal = (card.querySelector('[data-key="intervalMinutes"]') as HTMLInputElement)?.value;
     const intervalMinutes = intervalMinutesVal ? Number(intervalMinutesVal) : initialRule.intervalMinutes;
+
     const displayedKind = initialRule.kind || "rolling";
     const displayedAnchor = initialRule.anchorLocalTime || "00:00";
     const displayedDay = initialRule.dayOfWeek ?? 1;
     const displayedInterval = initialRule.intervalMinutes;
-    const resetChanged = resetKind !== displayedKind || anchorLocalTime !== displayedAnchor || dayOfWeek !== displayedDay || intervalMinutes !== displayedInterval;
+
+    const resetChanged =
+      resetKind !== displayedKind ||
+      anchorLocalTime !== displayedAnchor ||
+      dayOfWeek !== displayedDay ||
+      intervalMinutes !== displayedInterval;
+
     const inferred = resetChanged ? false : initialRule.inferred !== false;
+
     updatedSites[site] = {
       ...initialSitePref,
       enabled,
@@ -163,12 +202,15 @@ async function saveCurrentSettings() {
         kind: resetKind,
         anchorLocalTime,
         dayOfWeek,
-        ...intervalMinutes !== void 0 ? { intervalMinutes } : {},
+        ...(intervalMinutes !== undefined ? { intervalMinutes } : {}),
         inferred,
-        description: resetChanged ? "User-configured schedule estimate; not a verified provider reset." : initialRule.description
+        description: resetChanged
+          ? "User-configured schedule estimate; not a verified provider reset."
+          : initialRule.description
       }
     };
   }
+
   await sendMessage({
     type: "save-preferences",
     payload: {
@@ -186,6 +228,7 @@ async function saveCurrentSettings() {
       sites: updatedSites
     }
   });
+
   currentPreferences = structuredClone({
     ...currentPreferences,
     theme,
@@ -201,6 +244,7 @@ async function saveCurrentSettings() {
     },
     sites: updatedSites
   });
+
   const saveBtn = document.getElementById("save-btn");
   if (saveBtn) {
     const orig = saveBtn.textContent;
@@ -210,12 +254,15 @@ async function saveCurrentSettings() {
     }, 1500);
   }
 }
+
 document.addEventListener("DOMContentLoaded", () => {
   void loadSettings();
+
   document.getElementById("save-btn")?.addEventListener("click", () => void saveCurrentSettings());
+
   document.getElementById("cloud-connect-btn")?.addEventListener("click", async () => {
-    const apiUrl = document.getElementById("cloud-api-url")?.value.trim();
-    const token = document.getElementById("cloud-access-token")?.value.trim();
+    const apiUrl = (document.getElementById("cloud-api-url") as HTMLInputElement)?.value.trim();
+    const token = (document.getElementById("cloud-access-token") as HTMLInputElement)?.value.trim();
     if (!apiUrl) {
       alert("Please enter a backend URL.");
       return;
@@ -230,6 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
       alert(`Connection failed: ${res?.error || "Unknown error"}`);
     }
   });
+
   document.getElementById("cloud-sync-btn")?.addEventListener("click", async () => {
     const res = await sendMessage({ type: "cloud-sync" });
     if (res?.ok) {
@@ -239,10 +287,12 @@ document.addEventListener("DOMContentLoaded", () => {
       alert(`Sync error: ${res?.error || "Failed"}`);
     }
   });
+
   document.getElementById("cloud-disconnect-btn")?.addEventListener("click", async () => {
     await sendMessage({ type: "cloud-disconnect" });
     await updateCloudStatus();
   });
+
   document.getElementById("clear-local-history-btn")?.addEventListener("click", async () => {
     if (confirm("Are you sure you want to clear all local token history? Preferences will be preserved.")) {
       await sendMessage({ type: "clear-local-history" });
@@ -250,3 +300,5 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+export {};

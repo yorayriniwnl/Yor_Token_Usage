@@ -121,8 +121,8 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       });
       const accountCost = accountCostGroups.reduce((acc, g) => {
         const c = calculateCost(g._sum.promptTokens ?? 0, g._sum.outputTokens ?? 0, g.model, g.provider);
-        return { totalCost: acc.totalCost + c.totalCost, inputCost: acc.inputCost + c.inputCost, outputCost: acc.outputCost + c.outputCost };
-      }, { totalCost: 0, inputCost: 0, outputCost: 0 });
+        return { totalCost: acc.totalCost + c.totalCost, promptCost: acc.promptCost + c.promptCost, outputCost: acc.outputCost + c.outputCost };
+      }, { totalCost: 0, promptCost: 0, outputCost: 0 });
 
       let scopedCost = accountCost;
       if (isFiltered && scopedUsage) {
@@ -133,8 +133,8 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
         });
         scopedCost = scopedCostGroups.reduce((acc, g) => {
           const c = calculateCost(g._sum.promptTokens ?? 0, g._sum.outputTokens ?? 0, g.model, g.provider);
-          return { totalCost: acc.totalCost + c.totalCost, inputCost: acc.inputCost + c.inputCost, outputCost: acc.outputCost + c.outputCost };
-        }, { totalCost: 0, inputCost: 0, outputCost: 0 });
+          return { totalCost: acc.totalCost + c.totalCost, promptCost: acc.promptCost + c.promptCost, outputCost: acc.outputCost + c.outputCost };
+        }, { totalCost: 0, promptCost: 0, outputCost: 0 });
       }
 
       const exactProviderWindow = resolveProviderWindow(providerName, now, earliestRollingEvent?.occurredAt);
@@ -145,8 +145,8 @@ export async function quotaRoutes(app: FastifyInstance): Promise<void> {
       });
       const rollingCost = rollingCostGroups.reduce((acc, g) => {
         const c = calculateCost(g._sum.promptTokens ?? 0, g._sum.outputTokens ?? 0, g.model, g.provider);
-        return { totalCost: acc.totalCost + c.totalCost, inputCost: acc.inputCost + c.inputCost, outputCost: acc.outputCost + c.outputCost };
-      }, { totalCost: 0, inputCost: 0, outputCost: 0 });
+        return { totalCost: acc.totalCost + c.totalCost, promptCost: acc.promptCost + c.promptCost, outputCost: acc.outputCost + c.outputCost };
+      }, { totalCost: 0, promptCost: 0, outputCost: 0 });
 
       return {
         usedTokens: scopedUsedTokens,

@@ -8,8 +8,6 @@ const usageEventFields = {
   promptTokens: z.number().int().min(0).max(2_000_000),
   outputTokens: z.number().int().min(0).max(2_000_000),
   totalTokens: z.number().int().min(0).max(4_000_000),
-  promptText: z.string().max(10_000_000).optional(),
-  responseText: z.string().max(10_000_000).optional(),
   promptHash: z.string().length(64).regex(/^[a-f0-9]+$/i).optional(),
   status: z.enum(["COMPLETED", "RATE_LIMITED", "FAILED"]).default("COMPLETED"),
   // Provider-authoritative counts are not accepted until a verified provider

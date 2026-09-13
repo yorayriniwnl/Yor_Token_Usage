@@ -1,129 +1,50 @@
+"use strict";
 (() => {
-  // src/lib/utils.ts
-  function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
-  }
-  function sum(values) {
-    return values.reduce((acc, value) => acc + value, 0);
-  }
-  function round(value, digits = 0) {
-    const precision = 10 ** digits;
-    return Math.round(value * precision) / precision;
-  }
+  // src/shared/utils.ts
   function uid(prefix = "yor") {
     const randomPart = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10);
     return `${prefix}_${randomPart}_${Date.now().toString(36)}`;
   }
   function debounce(fn, delay = 200) {
-    let timeout = 0;
+    let timeout;
     return (...args) => {
       clearTimeout(timeout);
       timeout = setTimeout(() => fn(...args), delay);
     };
   }
-  function hashString(text) {
-    let hash = 2166136261;
-    for (let index = 0; index < text.length; index += 1) {
-      hash ^= text.charCodeAt(index);
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-    return (hash >>> 0).toString(36);
-  }
   function compactWhitespace(input) {
-    return input.replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  }
-  function unique(items) {
-    return Array.from(new Set(items));
-  }
-  function humanFileSize(bytes) {
-    if (!bytes || bytes <= 0) return "Unknown size";
-    const units = ["B", "KB", "MB", "GB"];
-    let value = bytes;
-    let unitIndex = 0;
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
-    }
-    return `${round(value, value < 10 ? 1 : 0)} ${units[unitIndex]}`;
-  }
-  function truncate(text, limit = 120) {
-    return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}\u2026`;
+    return String(input ?? "").replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   }
 
   // src/adapters/base.ts
   function queryFirst(selectors, root = document) {
     for (const selector of selectors) {
-      const element = root.querySelector(selector);
-      if (element) return element;
+      try {
+        const element = root.querySelector(selector);
+        if (element) return element;
+      } catch {
+        continue;
+      }
     }
     return null;
   }
   function queryAll(selectors, root = document) {
-    const elements = [];
-    for (const selector of selectors) {
-      elements.push(...Array.from(root.querySelectorAll(selector)));
+    try {
+      const combined = selectors.join(", ");
+      return Array.from(root.querySelectorAll(combined));
+    } catch {
+      const elements = [];
+      for (const selector of selectors) {
+        try {
+          root.querySelectorAll(selector).forEach((el) => {
+            if (!elements.includes(el)) elements.push(el);
+          });
+        } catch {
+          continue;
+        }
+      }
+      return elements;
     }
-    return Array.from(new Set(elements));
-  }
-  function sortByDomOrder(nodes) {
-    return [...nodes].sort((a, b) => {
-      if (a === b) return 0;
-      return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING ? 1 : -1;
-    });
-  }
-  function textFromNode(node) {
-    const input = node;
-    const directValue = typeof input.value === "string" ? input.value : "";
-    const content = directValue || node.innerText || node.textContent || "";
-    return content.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  }
-  function selectorMatches(node, selectors) {
-    return selectors.some((selector) => {
-      try {
-        return node.matches(selector);
-      } catch {
-        return false;
-      }
-    });
-  }
-  function closestSelectorMatches(node, selectors) {
-    return selectors.some((selector) => {
-      try {
-        return Boolean(node.closest(selector));
-      } catch {
-        return false;
-      }
-    });
-  }
-  function roleHintFromNode(node, fallbackIndex = 0) {
-    const attributeNames = ["data-message-author-role", "data-is-author", "data-author", "data-testid", "aria-label", "class"];
-    const parts = [];
-    let cursor = node;
-    for (let depth = 0; cursor && depth < 5; depth += 1) {
-      for (const name of attributeNames) {
-        const value = cursor.getAttribute?.(name);
-        if (value) parts.push(value);
-      }
-      cursor = cursor.parentElement;
-    }
-    const haystack = parts.join(" ").toLowerCase();
-    if (/\b(user|human|you)\b|font-user|human-message|user-message/.test(haystack)) return "user";
-    if (/\b(assistant|model|ai|response|answer|claude)\b|font-claude|assistant-message|ai-message/.test(haystack)) return "assistant";
-    if (node.matches?.(".prose, [class*='font-claude']")) return "assistant";
-    return fallbackIndex % 2 === 0 ? "user" : "assistant";
-  }
-  function normalizeMessageText(node) {
-    const copy = node.cloneNode(true);
-    copy.querySelectorAll('button, [role="toolbar"], time, [role="status"], [aria-hidden="true"], .sr-only').forEach(element => element.remove());
-    const heading = copy.querySelector('h1, h2, h3, [role="heading"]');
-    if (heading && /^(You said:|Claude responded:)/i.test(heading.textContent.trim())) heading.remove();
-    // Preserve paragraph boundaries when extracting from the detached, cleaned tree.
-    copy.querySelectorAll('p, div, li, pre, br').forEach(element => element.append('\n'));
-    return compactWhitespace(copy.textContent || "");
-  }
-  function cleanModelName(value) {
-    if (!value) return void 0;
-    return value.replace(/\s+/g, " ").replace(/\bnew\b/gi, "").trim().slice(0, 80) || void 0;
   }
   function parseRelativeReset(text) {
     const durationMatch = text.match(/(?:\bin\b|\bafter\b)\s*:?[ \t]*(?:(\d+)\s*(?:hours?|hrs?|h)\b)?\s*(?:(\d+)\s*(?:minutes?|mins?|m)\b)?/i);
@@ -156,811 +77,932 @@
   }
   function parseQuotaHintsFromText(text) {
     const normalized = text.replace(/\s+/g, " ").trim();
-    if (!normalized) return {};
+    if (!normalized) return { source: "unknown" };
     const limited = /(?:reached|exceeded|hit)[^.]*\b(?:limit|quota)\b|too many requests|try again later|(?:limit|quota)\s+(?:reached|exceeded)/i.test(normalized);
     const remainingMatch = normalized.match(/(?<![\d.,])(\d+(?:,\d{3})*)\s+tokens\s+remaining/i);
     const percentMatch = normalized.match(/(?<![\d.])(\d{1,3}(?:\.\d+)?)\s*%\s*(used|remaining)/i);
-    const percentage = percentMatch ? Number(percentMatch[1]) : undefined;
+    const percentage = percentMatch ? Number(percentMatch[1]) : void 0;
     const tierMatch = normalized.match(/\b(plus|pro|advanced|premium|free)\b/i);
     return {
       resetAt: /\bresets?\b|\btry again\b/i.test(normalized) ? parseRelativeReset(normalized) : void 0,
       rateLimitMessage: limited ? normalized.slice(0, 220) : void 0,
       remainingTokens: remainingMatch ? Number.parseInt(remainingMatch[1].replace(/,/g, ""), 10) : void 0,
-      percentUsed: percentage <= 100 ? (percentMatch[2].toLowerCase() === "remaining" ? 100 - percentage : percentage) : void 0,
+      percentUsed: percentage !== void 0 && percentage <= 100 ? percentMatch[2].toLowerCase() === "remaining" ? 100 - percentage : percentage : void 0,
       quotaTier: tierMatch?.[1] ? tierMatch[1][0].toUpperCase() + tierMatch[1].slice(1).toLowerCase() : void 0,
       status: limited ? "limited" : void 0,
-      confidence: limited || remainingMatch || percentMatch ? 0.72 : 0.2
+      source: "dom_alert",
+      rawText: normalized.slice(0, 300)
     };
   }
-  function inferThreadIdFromLocation(site) {
-    const url = new URL(window.location.href);
-    const pathParts = url.pathname.split("/").filter(Boolean);
-    const queryThread = url.searchParams.get("conversation") || url.searchParams.get("thread");
-    if (queryThread) return queryThread;
-    if (pathParts.length) return `${site}:${pathParts[pathParts.length - 1]}`;
-    return `${site}:root`;
+  function normalizeMessageText(node) {
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll('button, [role="toolbar"], time, [role="status"], [aria-hidden="true"], .sr-only').forEach((el) => el.remove());
+    const heading = copy.querySelector('h1, h2, h3, [role="heading"]');
+    if (heading && /^(You said:|Claude responded:)/i.test(heading.textContent?.trim() ?? "")) {
+      heading.remove();
+    }
+    copy.querySelectorAll("p, div, li, pre, br").forEach((el) => el.append("\n"));
+    return compactWhitespace(copy.textContent || "");
   }
-  var SelectorSiteAdapter = class {
-    messageIds = new WeakMap();
-    site;
-    label;
-    config;
-    constructor(config) {
-      this.config = config;
-      this.site = config.site;
-      this.label = config.label;
-    }
-    matches(url) {
-      return this.config.hostnames.some((hostname) => url.hostname === hostname || url.hostname.endsWith(`.${hostname}`));
-    }
-    getComposer() {
-      return queryFirst(this.config.composer);
-    }
-    getComposerSurface() {
-      const composer = this.getComposer();
-      if (!composer) return null;
-      // Position against the entire input surface, including its toolbar/footer.
-      const surface = composer.closest('form, [data-testid="composer"], [data-testid="chat-input"], [data-composer]');
-      if (surface) return surface;
-      let result = composer;
-      const inputRect = composer.getBoundingClientRect();
-      for (let node = composer.parentElement, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
-        const rect = node.getBoundingClientRect();
-        if (node.matches('main, section, body') || rect.height > Math.max(240, inputRect.height + 160)) break;
-        result = node;
+  function determineSemanticRole(node) {
+    const attributeNames = ["data-message-author-role", "data-is-author", "data-author", "data-testid", "aria-label", "class"];
+    const parts = [];
+    let cursor = node;
+    for (let depth = 0; cursor && depth < 5; depth += 1) {
+      for (const name of attributeNames) {
+        const value = cursor.getAttribute?.(name);
+        if (value) parts.push(value);
       }
-      return result;
+      cursor = cursor.parentElement;
     }
-    readComposerText() {
-      const composer = this.getComposer();
-      return composer ? textFromNode(composer) : "";
-    }
-    getSendButton() {
-      return queryFirst(this.config.sendButton);
-    }
-    getConversationRoot() {
-      return queryFirst(this.config.conversationRoot) ?? document.body;
-    }
-    isGenerating() {
-      const root = this.getConversationRoot();
-      return queryAll(['button[aria-label*="Stop" i]', 'button[data-testid*="stop" i]', '[aria-busy="true"]'], root)
-        .some(node => node.getClientRects().length > 0 && !node.closest('.yor-token-usage-root'));
-    }
-    collectMessages() {
-      const root = this.getConversationRoot();
-      const now = Date.now();
-      const messages = [];
-      const seen = /* @__PURE__ */ new Set();
-      const pushMessage = (node, role, index, source, minimumLength = 1) => {
-        const text = normalizeMessageText(node);
-        if (text.length < minimumLength) return;
-        if (/^(copy|retry|edit|share|thumbs up|thumbs down)$/i.test(text)) return;
-        if (seen.has(node) || messages.some(message => message.node.contains(node) || node.contains(message.node))) return;
-        seen.add(node);
-        if (!this.messageIds.has(node)) this.messageIds.set(node, uid("message"));
-        messages.push({
-          id: this.messageIds.get(node),
-          role,
-          text,
-          timestamp: now,
-          node
-        });
-      };
-      const exactCandidates = [
-        ...queryAll(this.config.userMessage, root).map((node) => ({ node, role: "user" })),
-        ...queryAll(this.config.assistantMessage, root).map((node) => ({ node, role: "assistant" }))
-      ].sort((a, b) => a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_PRECEDING ? 1 : -1).map((entry, index) => ({ ...entry, index }));
-      exactCandidates.forEach(({ node, role, index }) => pushMessage(node, role, index, "exact"));
-      const hasUser = messages.some((message) => message.role === "user");
-      const hasAssistant = messages.some((message) => message.role === "assistant");
-      if (!hasUser || !hasAssistant || messages.length < 2) {
-        const genericSelectors = [
-          "[data-message-author-role]",
-          "[data-is-author]",
-          "[data-testid*='message']",
-          "[data-testid*='conversation-turn']",
-          "article",
-          ".message",
-          ".prose",
-          "[class*='font-claude']",
-          "[class*='font-user']"
-        ];
-        sortByDomOrder(queryAll(genericSelectors, root)).forEach((node, index) => {
-          const heading = node.querySelector('h1, h2, h3, [role="heading"]')?.textContent.trim() ?? "";
-          const semanticRole = /^You said:/i.test(heading) ? "user" : /^Claude responded:/i.test(heading) ? "assistant" : void 0;
-          const role = semanticRole ?? (selectorMatches(node, this.config.userMessage) || closestSelectorMatches(node, this.config.userMessage) ? "user" : selectorMatches(node, this.config.assistantMessage) || closestSelectorMatches(node, this.config.assistantMessage) ? "assistant" : roleHintFromNode(node, index));
-          pushMessage(node, role, index, "generic", 1);
-        });
-      }
-      return messages.sort((a, b) => a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_PRECEDING ? 1 : -1).map(({ node, ...message }) => message).slice(-40);
-    }
-    getModelName() {
-      const modelElement = queryFirst(this.config.model);
-      return cleanModelName(modelElement?.innerText || modelElement?.textContent || void 0);
-    }
-    getThreadId() {
-      return inferThreadIdFromLocation(this.site);
-    }
-    getAttachmentDescriptors() {
-      return queryAll(this.config.attachment).map((node) => {
-        const name = textFromNode(node).slice(0, 120) || node.getAttribute("aria-label") || "Attachment";
-        const sizeHint = node.getAttribute("data-size") || node.getAttribute("aria-description") || "";
-        const sizeMatch = sizeHint.match(/(\d+(?:\.\d+)?)\s*(KB|MB|GB)/i);
-        let sizeBytes;
-        if (sizeMatch) {
-          const value = Number.parseFloat(sizeMatch[1]);
-          const unit = sizeMatch[2].toUpperCase();
-          sizeBytes = unit === "GB" ? value * 1024 ** 3 : unit === "MB" ? value * 1024 ** 2 : value * 1024;
-        }
-        return {
-          name,
-          sizeBytes
-        };
-      });
-    }
-    getQuotaHints() {
-      const alertNodes = queryAll(this.config.alert).filter((node) =>
-        node.getClientRects().length > 0 &&
-        !node.closest('.yor-token-usage-root, [contenteditable="true"]') &&
-        !closestSelectorMatches(node, [...this.config.userMessage, ...this.config.assistantMessage])
-      );
-      const text = alertNodes.map((node) => textFromNode(node)).join(" \u2022 ");
-      // Never interpret conversation prose or another extension's footer as account data.
-      // Anchor a relative countdown once; polling identical text must not postpone it.
-      if (this.quotaHintText !== text) {
-        this.quotaHintText = text;
-        this.quotaHints = parseQuotaHintsFromText(text);
-      }
-      return this.quotaHints ?? {};
-    }
-  };
+    const haystack = parts.join(" ").toLowerCase();
+    if (/\b(user|human|you)\b|font-user|human-message|user-message/.test(haystack)) return "user";
+    if (/\b(assistant|model|ai|response|answer|claude)\b|font-claude|assistant-message|ai-message/.test(haystack)) return "assistant";
+    if (node.matches?.(".prose, [class*='font-claude']")) return "assistant";
+    return "unknown";
+  }
 
   // src/adapters/chatgpt.ts
-  var chatgptAdapter = new SelectorSiteAdapter({
-    site: "chatgpt",
-    label: "ChatGPT",
-    hostnames: ["chatgpt.com", "chat.openai.com"],
-    composer: ["#prompt-textarea", 'textarea[data-id="root"]', "textarea", 'div#prompt-textarea[contenteditable="true"]'],
-    sendButton: ['button[data-testid="send-button"]', 'button[aria-label*="Send"]'],
-    conversationRoot: ["main", '[data-testid="conversation-turns"]', "section"],
-    userMessage: ['[data-message-author-role="user"]', 'article [data-message-author-role="user"]'],
-    assistantMessage: ['[data-message-author-role="assistant"]', 'article [data-message-author-role="assistant"]'],
-    model: ['button[data-testid*="model-switcher"]', 'button[aria-haspopup="menu"]', "header button"],
-    attachment: ['[data-testid*="attachment"]', 'button[aria-label*="attachment"]'],
-    alert: ['[role="alert"]', '[data-testid="toast"]', ".text-token-text-error"]
-  });
+  var ChatGPTAdapter = class {
+    site = "chatgpt";
+    label = "ChatGPT";
+    matches(url) {
+      return url.hostname === "chatgpt.com" || url.hostname === "chat.openai.com" || url.hostname.endsWith(".chatgpt.com");
+    }
+    detectModel(root = document) {
+      const selector = [
+        '[data-testid="model-switcher-dropdown-button"]',
+        'button[aria-haspopup="menu"][data-testid*="model"]',
+        '[data-testid*="model-selector"]',
+        'button:has([data-testid*="model"])'
+      ];
+      const el = queryFirst(selector, root);
+      const rawName = el?.textContent?.trim() || void 0;
+      return {
+        rawName,
+        label: rawName ? compactWhitespace(rawName) : void 0,
+        isKnown: Boolean(rawName)
+      };
+    }
+    findComposer(root = document) {
+      return queryFirst(
+        [
+          "#prompt-textarea",
+          '[data-testid="prompt-textarea"]',
+          "form textarea",
+          'div[contenteditable="true"][data-placeholder]',
+          'textarea[placeholder*="Message"]'
+        ],
+        root
+      );
+    }
+    readComposerText(composer) {
+      if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+        return composer.value;
+      }
+      return composer.innerText || composer.textContent || "";
+    }
+    findSendControl(root = document) {
+      return queryFirst(
+        [
+          '[data-testid="send-button"]',
+          'button[aria-label="Send prompt"]',
+          'button[aria-label="Send message"]',
+          'form button[type="submit"]',
+          'button[data-testid*="send"]'
+        ],
+        root
+      );
+    }
+    findStopControl(root = document) {
+      return queryFirst(
+        [
+          '[data-testid="stop-button"]',
+          'button[aria-label="Stop generating"]',
+          'button[aria-label="Stop response"]',
+          'button[data-testid*="stop"]'
+        ],
+        root
+      );
+    }
+    collectVisibleMessages(root = document) {
+      const turns = queryAll(["[data-message-author-role]", 'article[data-testid*="conversation-turn"]', '[data-testid*="message"]'], root);
+      const messages = [];
+      turns.forEach((turn, index) => {
+        const role = determineSemanticRole(turn);
+        const text = normalizeMessageText(turn);
+        if (text) {
+          messages.push({
+            id: turn.getAttribute("data-message-id") || `turn_${index}`,
+            role,
+            text,
+            index,
+            source: role === "unknown" ? "fallback" : "semantic"
+          });
+        }
+      });
+      return messages;
+    }
+    getConversationId(url, _root) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const cIndex = parts.indexOf("c");
+      if (cIndex !== -1 && parts[cIndex + 1]) {
+        return `chatgpt:${parts[cIndex + 1]}`;
+      }
+      if (parts.length > 0) {
+        return `chatgpt:${parts[parts.length - 1]}`;
+      }
+      return "chatgpt:new";
+    }
+    getQuotaSignals(root = document) {
+      const alert = queryFirst(
+        [
+          '[role="alert"]',
+          ".alert-error",
+          '[data-testid*="limit-banner"]',
+          '[data-testid*="quota"]'
+        ],
+        root
+      );
+      if (!alert || !alert.textContent) return null;
+      return parseQuotaHintsFromText(alert.textContent);
+    }
+    getAttachmentDescriptors(root = document) {
+      const items = queryAll(['[data-testid*="attachment"]', '[data-testid*="file"]'], root);
+      return items.map((item, idx) => ({
+        name: item.getAttribute("aria-label") || item.textContent?.trim() || `Attachment ${idx + 1}`,
+        tokenProvenance: "unknown"
+      }));
+    }
+  };
 
   // src/adapters/claude.ts
-  var claudeAdapter = new SelectorSiteAdapter({
-    site: "claude",
-    label: "Claude",
-    hostnames: ["claude.ai"],
-    composer: ['div[contenteditable="true"][aria-label*="Message"]', 'div.ProseMirror[contenteditable="true"]', "textarea"],
-    sendButton: ['button[aria-label*="Send"]', 'button[data-testid*="send"]'],
-    conversationRoot: ["main", "section", '[data-testid*="conversation"]'],
-    userMessage: ['[data-testid="user-message"]', '[data-testid*="user-message"]', 'div[data-is-author="human"]', '[data-is-author="human"]', '[data-testid*="human-message"]', '[class*="font-user-message"]'],
-    assistantMessage: ['[data-testid="assistant-message"]', '[data-testid*="assistant-message"]', 'div[data-is-author="assistant"]', '[data-is-author="assistant"]', '[data-testid*="ai-message"]', '[class*="font-claude-message"]'],
-    model: ['button[data-testid*="model"]', "header button", 'button[aria-haspopup="menu"]'],
-    attachment: ['button[aria-label*="attachment"]', '[data-testid*="attachment"]'],
-    alert: ['[role="alert"]', '[data-testid*="warning"]', ".text-danger"]
-  });
+  var ClaudeAdapter = class {
+    site = "claude";
+    label = "Claude";
+    matches(url) {
+      return url.hostname === "claude.ai" || url.hostname.endsWith(".claude.ai");
+    }
+    detectModel(root = document) {
+      const el = queryFirst(
+        [
+          '[data-testid="model-selector"]',
+          'button:has([data-testid="model-selector"])',
+          'header button:has-text("Claude")',
+          "header button"
+        ],
+        root
+      );
+      const rawName = el?.textContent?.trim() || void 0;
+      return {
+        rawName,
+        label: rawName ? compactWhitespace(rawName) : void 0,
+        isKnown: Boolean(rawName)
+      };
+    }
+    findComposer(root = document) {
+      return queryFirst(
+        [
+          '.ProseMirror[contenteditable="true"]',
+          'div[contenteditable="true"][aria-label*="Message"]',
+          'div[contenteditable="true"]',
+          'textarea[placeholder*="Message"]'
+        ],
+        root
+      );
+    }
+    readComposerText(composer) {
+      if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+        return composer.value;
+      }
+      return composer.innerText || composer.textContent || "";
+    }
+    findSendControl(root = document) {
+      return queryFirst(
+        [
+          'button[aria-label="Send"]',
+          'button[aria-label="Send Message"]',
+          'button[aria-label="Send message"]',
+          'form button:has-text("Send")'
+        ],
+        root
+      );
+    }
+    findStopControl(root = document) {
+      return queryFirst(
+        [
+          'button[aria-label="Stop response"]',
+          'button[aria-label="Stop generating"]',
+          'button:has-text("Stop")'
+        ],
+        root
+      );
+    }
+    collectVisibleMessages(root = document) {
+      const turns = queryAll(
+        [
+          '[data-testid="user-message"]',
+          '[data-testid="assistant-message"]',
+          '[role="feed"] article',
+          'article[aria-label*="Message"]',
+          ".font-claude-message",
+          ".font-user-message"
+        ],
+        root
+      );
+      const messages = [];
+      const roleCounts = /* @__PURE__ */ new Map();
+      turns.forEach((turn, index) => {
+        let role = "unknown";
+        const testId = turn.getAttribute("data-testid") || "";
+        if (testId.includes("user")) role = "user";
+        else if (testId.includes("assistant")) role = "assistant";
+        else {
+          const heading = turn.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim() ?? "";
+          if (/^You said:/i.test(heading)) role = "user";
+          else if (/^Claude responded:/i.test(heading)) role = "assistant";
+          else role = determineSemanticRole(turn);
+        }
+        const text = normalizeMessageText(turn);
+        if (text) {
+          const countKey = `${role}::${text}`;
+          const count = roleCounts.get(countKey) || 0;
+          roleCounts.set(countKey, count + 1);
+          const id = turn.getAttribute("data-message-id") || turn.getAttribute("id") || `${role}:${count}:${text.slice(0, 120)}`;
+          messages.push({
+            id,
+            role,
+            text,
+            index,
+            source: role === "unknown" ? "fallback" : "semantic"
+          });
+        }
+      });
+      return messages;
+    }
+    getConversationId(url, _root) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const chatIndex = parts.indexOf("chat");
+      if (chatIndex !== -1 && parts[chatIndex + 1]) {
+        return `claude:${parts[chatIndex + 1]}`;
+      }
+      return parts.length > 0 ? `claude:${parts[parts.length - 1]}` : "claude:new";
+    }
+    getQuotaSignals(root = document) {
+      const alerts = queryAll(['[role="alert"]', "footer", ".text-danger", '[data-testid*="quota"]'], root);
+      for (const el of alerts) {
+        const text = el.textContent?.trim();
+        if (text && /(?:resets?|messages left|limit|try again)/i.test(text)) {
+          return parseQuotaHintsFromText(text);
+        }
+      }
+      return null;
+    }
+    getAttachmentDescriptors(root = document) {
+      const items = queryAll(['[data-testid*="attachment"]', '[data-testid*="file-pill"]'], root);
+      return items.map((item, idx) => ({
+        name: item.getAttribute("aria-label") || item.textContent?.trim() || `Attachment ${idx + 1}`,
+        tokenProvenance: "unknown"
+      }));
+    }
+  };
 
   // src/adapters/gemini.ts
-  var geminiAdapter = new SelectorSiteAdapter({
-    site: "gemini",
-    label: "Gemini",
-    hostnames: ["gemini.google.com"],
-    composer: ["textarea", 'div[contenteditable="true"]'],
-    sendButton: ['button[aria-label*="Send"]', 'button[mattooltip*="Send"]'],
-    conversationRoot: ["main", "chat-app", '[role="main"]'],
-    userMessage: ["user-query", '[data-test-id*="user"]'],
-    assistantMessage: ["model-response", '[data-test-id*="response"]'],
-    model: ['button[aria-haspopup="menu"]', "header button"],
-    attachment: ['button[aria-label*="attachment"]', "upload-chip"],
-    alert: ['[role="alert"]', "snack-bar-container"]
-  });
-
-  // src/adapters/grok.ts
-  var grokAdapter = new SelectorSiteAdapter({
-    site: "grok",
-    label: "Grok",
-    hostnames: ["grok.com", "x.com"],
-    composer: ["textarea", 'div[contenteditable="true"]'],
-    sendButton: ['button[aria-label*="Send"]', 'button[type="submit"]'],
-    conversationRoot: ["main", '[role="main"]'],
-    userMessage: ['[data-testid*="user-message"]', '[data-message-author-role="user"]'],
-    assistantMessage: ['[data-testid*="assistant-message"]', '[data-message-author-role="assistant"]'],
-    model: ['button[aria-haspopup="menu"]', "header button"],
-    attachment: ['button[aria-label*="attachment"]'],
-    alert: ['[role="alert"]', '[data-testid*="warning"]']
-  });
+  var GeminiAdapter = class {
+    site = "gemini";
+    label = "Gemini";
+    matches(url) {
+      return url.hostname === "gemini.google.com" || url.hostname.endsWith(".gemini.google.com");
+    }
+    detectModel(root = document) {
+      const el = queryFirst(
+        [
+          '[data-test-id="model-picker-btn"]',
+          'button[aria-label*="model" i]',
+          ".model-select-button"
+        ],
+        root
+      );
+      const rawName = el?.textContent?.trim() || void 0;
+      return {
+        rawName,
+        label: rawName ? compactWhitespace(rawName) : void 0,
+        isKnown: Boolean(rawName)
+      };
+    }
+    findComposer(root = document) {
+      return queryFirst(
+        [
+          '.ql-editor[contenteditable="true"]',
+          'rich-textarea [contenteditable="true"]',
+          'div[contenteditable="true"][aria-label*="prompt" i]',
+          'textarea[aria-label*="prompt" i]'
+        ],
+        root
+      );
+    }
+    readComposerText(composer) {
+      if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+        return composer.value;
+      }
+      return composer.innerText || composer.textContent || "";
+    }
+    findSendControl(root = document) {
+      return queryFirst(
+        [
+          'button[aria-label*="Send message" i]',
+          "button.send-button",
+          '[data-test-id="send-button"]'
+        ],
+        root
+      );
+    }
+    findStopControl(root = document) {
+      return queryFirst(
+        [
+          'button[aria-label*="Stop response" i]',
+          'button[aria-label*="Stop generating" i]',
+          ".stop-button"
+        ],
+        root
+      );
+    }
+    collectVisibleMessages(root = document) {
+      const turns = queryAll(
+        [
+          "user-query",
+          "model-response",
+          "[data-message-author-role]",
+          ".conversation-container .message"
+        ],
+        root
+      );
+      const messages = [];
+      turns.forEach((turn, index) => {
+        let role = "unknown";
+        const tagName = turn.tagName.toLowerCase();
+        if (tagName === "user-query" || turn.classList.contains("user-query")) {
+          role = "user";
+        } else if (tagName === "model-response" || turn.classList.contains("model-response")) {
+          role = "assistant";
+        } else {
+          role = determineSemanticRole(turn);
+        }
+        const text = normalizeMessageText(turn);
+        if (text) {
+          messages.push({
+            id: turn.getAttribute("data-message-id") || `gemini_${index}`,
+            role,
+            text,
+            index,
+            source: role === "unknown" ? "fallback" : "semantic"
+          });
+        }
+      });
+      return messages;
+    }
+    getConversationId(url, _root) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const appIndex = parts.indexOf("app");
+      if (appIndex !== -1 && parts[appIndex + 1]) {
+        return `gemini:${parts[appIndex + 1]}`;
+      }
+      return parts.length > 0 ? `gemini:${parts[parts.length - 1]}` : "gemini:root";
+    }
+    getQuotaSignals(root = document) {
+      const banner = queryFirst(['[role="alert"]', ".quota-banner", ".warning-message"], root);
+      if (!banner || !banner.textContent) return null;
+      return parseQuotaHintsFromText(banner.textContent);
+    }
+    getAttachmentDescriptors(root = document) {
+      const items = queryAll(['[data-test-id*="attachment"]', ".file-preview"], root);
+      return items.map((item, idx) => ({
+        name: item.getAttribute("aria-label") || item.textContent?.trim() || `Attachment ${idx + 1}`,
+        tokenProvenance: "unknown"
+      }));
+    }
+  };
 
   // src/adapters/perplexity.ts
-  var perplexityAdapter = new SelectorSiteAdapter({
-    site: "perplexity",
-    label: "Perplexity",
-    hostnames: ["perplexity.ai", "www.perplexity.ai"],
-    composer: ["textarea", 'div[contenteditable="true"]'],
-    sendButton: ['button[aria-label*="Submit"]', 'button[aria-label*="Send"]', 'button[type="submit"]'],
-    conversationRoot: ["main", '[data-testid*="thread"]', '[role="main"]'],
-    userMessage: ['[data-testid*="user-message"]', '[data-message-author-role="user"]'],
-    assistantMessage: ['[data-testid*="assistant-message"]', '[data-message-author-role="assistant"]'],
-    model: ['button[aria-haspopup="menu"]', '[data-testid*="mode"]'],
-    attachment: ['button[aria-label*="attachment"]', '[data-testid*="attachment"]'],
-    alert: ['[role="alert"]', ".toast", '[data-testid*="limit"]']
-  });
+  var PerplexityAdapter = class {
+    site = "perplexity";
+    label = "Perplexity";
+    matches(url) {
+      return url.hostname === "perplexity.ai" || url.hostname.endsWith(".perplexity.ai");
+    }
+    detectModel(root = document) {
+      const el = queryFirst(
+        [
+          'button[aria-label*="model" i]',
+          '[data-testid*="model"]',
+          ".model-badge"
+        ],
+        root
+      );
+      const rawName = el?.textContent?.trim() || void 0;
+      return {
+        rawName,
+        label: rawName ? compactWhitespace(rawName) : void 0,
+        isKnown: Boolean(rawName)
+      };
+    }
+    findComposer(root = document) {
+      return queryFirst(
+        [
+          'textarea[placeholder*="Ask anything" i]',
+          'textarea[placeholder*="Ask follow-up" i]',
+          "textarea",
+          'div[contenteditable="true"]'
+        ],
+        root
+      );
+    }
+    readComposerText(composer) {
+      if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+        return composer.value;
+      }
+      return composer.innerText || composer.textContent || "";
+    }
+    findSendControl(root = document) {
+      return queryFirst(
+        [
+          'button[aria-label="Submit" i]',
+          'button[aria-label="Send" i]',
+          'button[type="submit"]'
+        ],
+        root
+      );
+    }
+    findStopControl(root = document) {
+      return queryFirst(['button[aria-label="Stop" i]'], root);
+    }
+    collectVisibleMessages(root = document) {
+      const turns = queryAll(
+        [
+          ".query-wrapper",
+          ".answer-wrapper",
+          '[data-testid*="thread-item"]',
+          ".conversation-turn"
+        ],
+        root
+      );
+      const messages = [];
+      turns.forEach((turn, index) => {
+        let role = "unknown";
+        if (turn.classList.contains("query-wrapper")) {
+          role = "user";
+        } else if (turn.classList.contains("answer-wrapper")) {
+          role = "assistant";
+        } else {
+          role = determineSemanticRole(turn);
+        }
+        const text = normalizeMessageText(turn);
+        if (text) {
+          messages.push({
+            id: turn.getAttribute("data-message-id") || `pplx_${index}`,
+            role,
+            text,
+            index,
+            source: role === "unknown" ? "fallback" : "semantic"
+          });
+        }
+      });
+      return messages;
+    }
+    getConversationId(url, _root) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const searchIndex = parts.indexOf("search");
+      if (searchIndex !== -1 && parts[searchIndex + 1]) {
+        return `perplexity:${parts[searchIndex + 1]}`;
+      }
+      return parts.length > 0 ? `perplexity:${parts[parts.length - 1]}` : "perplexity:new";
+    }
+    getQuotaSignals(root = document) {
+      const alert = queryFirst(['[role="alert"]', ".pro-usage-alert"], root);
+      if (!alert || !alert.textContent) return null;
+      return parseQuotaHintsFromText(alert.textContent);
+    }
+    getAttachmentDescriptors(root = document) {
+      const items = queryAll(['[data-testid*="file-upload"]', ".attachment-pill"], root);
+      return items.map((item, idx) => ({
+        name: item.getAttribute("aria-label") || item.textContent?.trim() || `Attachment ${idx + 1}`,
+        tokenProvenance: "unknown"
+      }));
+    }
+  };
+
+  // src/adapters/grok.ts
+  var GrokAdapter = class {
+    site = "grok";
+    label = "Grok";
+    matches(url) {
+      return url.hostname === "grok.com" || url.hostname.endsWith(".grok.com") || url.hostname === "x.com" && url.pathname.startsWith("/i/grok");
+    }
+    detectModel(root = document) {
+      const el = queryFirst(['button[aria-label*="model" i]', '[data-testid*="grok-model"]'], root);
+      const rawName = el?.textContent?.trim() || void 0;
+      return {
+        rawName,
+        label: rawName ? compactWhitespace(rawName) : void 0,
+        isKnown: Boolean(rawName)
+      };
+    }
+    findComposer(root = document) {
+      return queryFirst(
+        [
+          'textarea[placeholder*="Ask Grok" i]',
+          'div[contenteditable="true"][aria-label*="Grok" i]',
+          "textarea",
+          'div[contenteditable="true"]'
+        ],
+        root
+      );
+    }
+    readComposerText(composer) {
+      if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+        return composer.value;
+      }
+      return composer.innerText || composer.textContent || "";
+    }
+    findSendControl(root = document) {
+      return queryFirst(
+        [
+          'button[aria-label="Grok something" i]',
+          'button[aria-label="Send" i]',
+          'button[data-testid*="send"]'
+        ],
+        root
+      );
+    }
+    findStopControl(root = document) {
+      return queryFirst(['button[aria-label="Stop" i]'], root);
+    }
+    collectVisibleMessages(root = document) {
+      const turns = queryAll(
+        [
+          '[data-testid*="grok-message"]',
+          '[data-testid*="conversation-turn"]',
+          ".message-bubble"
+        ],
+        root
+      );
+      const messages = [];
+      turns.forEach((turn, index) => {
+        const role = determineSemanticRole(turn);
+        const text = normalizeMessageText(turn);
+        if (text) {
+          messages.push({
+            id: turn.getAttribute("data-message-id") || `grok_${index}`,
+            role,
+            text,
+            index,
+            source: role === "unknown" ? "fallback" : "semantic"
+          });
+        }
+      });
+      return messages;
+    }
+    getConversationId(url, _root) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      return parts.length > 0 ? `grok:${parts[parts.length - 1]}` : "grok:new";
+    }
+    getQuotaSignals(root = document) {
+      const alert = queryFirst(['[role="alert"]', ".rate-limit-warning"], root);
+      if (!alert || !alert.textContent) return null;
+      return parseQuotaHintsFromText(alert.textContent);
+    }
+    getAttachmentDescriptors(root = document) {
+      const items = queryAll(['[data-testid*="attachment"]'], root);
+      return items.map((item, idx) => ({
+        name: item.getAttribute("aria-label") || item.textContent?.trim() || `Attachment ${idx + 1}`,
+        tokenProvenance: "unknown"
+      }));
+    }
+  };
 
   // src/adapters/index.ts
-  var adapters = [chatgptAdapter, claudeAdapter, geminiAdapter, perplexityAdapter, grokAdapter];
-  function getAdapterForCurrentSite() {
-    const url = new URL(window.location.href);
-    return adapters.find((adapter2) => adapter2.matches(url));
-  }
-
-  // src/lib/constants.ts
-  var SITE_LABELS = {
-    chatgpt: "ChatGPT",
-    claude: "Claude",
-    gemini: "Gemini",
-    perplexity: "Perplexity",
-    grok: "Grok",
-    generic: "Other"
-  };
-  function makeResetRule(kind, description, intervalMinutes) {
-    return {
-      kind,
-      intervalMinutes,
-      inferred: true,
-      description
-    };
-  }
-  function makeSiteSettings(site) {
-    const defaults = {
-      chatgpt: {
-        enabled: true,
-        resetRule: makeResetRule("rolling", "Inferred rolling window. Adjust in settings if your plan differs.", 180),
-        quotaTierLabel: "Auto-detect"
-      },
-      claude: {
-        enabled: true,
-        resetRule: {
-          kind: "daily",
-          anchorLocalTime: "00:00",
-          inferred: true,
-          description: "Inferred daily reset. Adjust if needed."
-        },
-        quotaTierLabel: "Auto-detect"
-      },
-      gemini: {
-        enabled: true,
-        resetRule: {
-          kind: "daily",
-          anchorLocalTime: "00:00",
-          inferred: true,
-          description: "Inferred daily reset. Adjust if needed."
-        },
-        quotaTierLabel: "Auto-detect"
-      },
-      perplexity: {
-        enabled: true,
-        resetRule: {
-          kind: "daily",
-          anchorLocalTime: "00:00",
-          inferred: true,
-          description: "Inferred daily reset. Adjust if needed."
-        },
-        quotaTierLabel: "Auto-detect"
-      },
-      grok: {
-        enabled: true,
-        resetRule: {
-          kind: "daily",
-          anchorLocalTime: "00:00",
-          inferred: true,
-          description: "Inferred daily reset. Adjust if needed."
-        },
-        quotaTierLabel: "Auto-detect"
-      },
-      generic: {
-        enabled: false,
-        resetRule: {
-          kind: "unknown",
-          inferred: true,
-          description: "Set a custom reset rule once you know the platform limits."
-        },
-        quotaTierLabel: "Custom"
+  var ADAPTERS = [
+    new ChatGPTAdapter(),
+    new ClaudeAdapter(),
+    new GeminiAdapter(),
+    new PerplexityAdapter(),
+    new GrokAdapter()
+  ];
+  function getAdapterForUrl(url) {
+    for (const adapter2 of ADAPTERS) {
+      if (adapter2.matches(url)) {
+        return adapter2;
       }
-    };
-    return structuredClone(defaults[site]);
-  }
-  var DEFAULT_PREFERENCES = {
-    theme: "system",
-    compactMode: false,
-    showOverlay: true,
-    privacyMode: "local-only",
-    alerts: {
-      quotaWarningPercent: 85,
-      largePromptTokens: 1800,
-      anomalyMultiplier: 2.1,
-      desktopNotifications: true,
-      badgeMode: "percent"
-    },
-    sites: {
-      chatgpt: makeSiteSettings("chatgpt"),
-      claude: makeSiteSettings("claude"),
-      gemini: makeSiteSettings("gemini"),
-      perplexity: makeSiteSettings("perplexity"),
-      grok: makeSiteSettings("grok"),
-      generic: makeSiteSettings("generic")
     }
-  };
+    return null;
+  }
 
-  // src/lib/tokenEstimator.ts
-  var URL_PATTERN = /https?:\/\/\S+/i;
-  function sectionLabel(text, type) {
-    const clean = compactWhitespace(text.replace(/```/g, "").replace(/^>+/gm, "").trim());
-    const preview = clean.split(" ").slice(0, 4).join(" ");
-    return preview ? `${type}: ${preview}` : type;
-  }
-  function estimateSectionTokens(text, type) {
-    const sharedEstimator = globalThis.YorTokenAccuracy?.estimateSectionTokens;
-    if (typeof sharedEstimator === "function") return sharedEstimator(text, type);
-    const chars = text.length;
-    const lines = Math.max(1, text.split("\n").length);
-    const punctuation = (text.match(/[,:;()[\]{}]/g) ?? []).length;
-    const urls = (text.match(/https?:\/\/\S+/g) ?? []).length;
-    const longWords = (text.match(/\b[\w-]{10,}\b/g) ?? []).length;
-    const nonAscii = (text.match(/[^\u0000-\u007f]/g) ?? []).length;
-    switch (type) {
-      case "code":
-        return Math.ceil(chars / 3.5 + lines * 0.3 + punctuation * 0.04 + longWords * 0.06);
-      case "url":
-        return Math.ceil(chars / 6.5 + urls * 6);
-      case "instruction":
-        return Math.ceil(chars / 4 + lines * 0.25 + punctuation * 0.08);
-      case "quote":
-        return Math.ceil(chars / 4.2 + lines * 0.15 + nonAscii * 0.05);
-      case "attachment":
-        return Math.ceil(chars / 7.5 + 12);
-      case "prose":
-      default:
-        return Math.ceil(chars / 4 + punctuation * 0.08 + nonAscii * 0.05 + longWords * 0.08);
+  // src/capture/stateMachine.ts
+  function estimateTokens(text) {
+    const engine = globalThis.YorTokenAccuracy;
+    if (engine?.estimateTokenBreakdown) {
+      return engine.estimateTokenBreakdown(text).total;
     }
+    return Math.ceil((text?.length || 0) / 4);
   }
-  function segmentText(text) {
-    const normalized = text.replace(/\r/g, "");
-    if (!normalized.trim()) return [];
-    const lines = normalized.split("\n");
-    const sections = [];
-    let position = 0;
-    let inCode = false;
-    let buffer = "";
-    let bufferType = null;
-    let bufferStart = 0;
-    const flush = (endPos) => {
-      if (!bufferType || !buffer.trim()) {
-        buffer = "";
-        bufferType = null;
-        bufferStart = endPos;
+  function makeMeasurement(provider, model, source) {
+    const engine = globalThis.YorTokenAccuracy;
+    if (engine?.createMeasurement) {
+      return engine.createMeasurement({ provider, model, source });
+    }
+    return {
+      measurementLevel: "approximation",
+      tokenizer: "none",
+      confidence: "estimated",
+      errorMarginPercent: 40
+    };
+  }
+  var CaptureStateMachine = class {
+    state = "IDLE";
+    pending = null;
+    adapter;
+    onCommit;
+    constructor(adapter2, onCommit) {
+      this.adapter = adapter2;
+      this.onCommit = onCommit;
+    }
+    getState() {
+      return this.state;
+    }
+    getPending() {
+      return this.pending;
+    }
+    /**
+     * Called when the user types in composer.
+     */
+    onUserTyping(text) {
+      if (this.state === "IDLE" || this.state === "DRAFTING") {
+        this.state = text.trim().length > 0 ? "DRAFTING" : "IDLE";
+      }
+    }
+    /**
+     * Called when user clicks send or presses Enter.
+     */
+    onUserSubmit(promptText, model, threadId, visibleMessages) {
+      const trimmed = promptText.trim();
+      if (!trimmed) return false;
+      const promptTokens = estimateTokens(trimmed);
+      const knownAssistantIds = /* @__PURE__ */ new Set();
+      visibleMessages.filter((m) => m.role === "assistant").forEach((m) => knownAssistantIds.add(m.id));
+      this.pending = {
+        id: uid("exch"),
+        clientEventId: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : uid("cli"),
+        threadId,
+        model,
+        promptText: trimmed,
+        promptTokens,
+        promptChars: trimmed.length,
+        startedAt: Date.now(),
+        awaitingThreadAssignment: threadId.endsWith(":new") || threadId.endsWith(":root"),
+        knownAssistantIds
+      };
+      this.state = "SUBMITTED";
+      return true;
+    }
+    /**
+     * Evaluates DOM updates to progress state:
+     * Checks stop controls, new assistant messages, error banners, rate limits.
+     */
+    onDomUpdate(root, currentUrl, visibleMessages, quotaSignal) {
+      if (!this.pending) {
+        if (this.state !== "IDLE" && this.state !== "DRAFTING") {
+          this.state = "IDLE";
+        }
         return;
       }
-      const content = buffer.trimEnd();
-      sections.push({
-        label: sectionLabel(content, bufferType),
-        type: bufferType,
-        tokens: estimateSectionTokens(content, bufferType),
-        start: bufferStart,
-        end: endPos
-      });
-      buffer = "";
-      bufferType = null;
-      bufferStart = endPos;
-    };
-    lines.forEach((line, index) => {
-      const rawLine = index < lines.length - 1 ? `${line}
-` : line;
-      const trimmed = line.trim();
-      const togglesFence = /^```/.test(trimmed);
-      let nextType = "prose";
-      if (inCode || togglesFence) {
-        nextType = "code";
-      } else if (/^>\s?/.test(trimmed)) {
-        nextType = "quote";
-      } else if (trimmed.startsWith("[") && /(attachment|file|image|pdf|csv|docx|sheet)/i.test(trimmed)) {
-        nextType = "attachment";
-      } else if (URL_PATTERN.test(trimmed) && trimmed.replace(/https?:\/\/\S+/g, "").trim().length < 24) {
-        nextType = "url";
-      } else if (/^([-*•]|\d+\.)\s/.test(trimmed) || /^(goal|task|context|constraints?|output|format|tone|steps?)\s*:/i.test(trimmed)) {
-        nextType = "instruction";
+      const now = Date.now();
+      const currentThreadId = this.adapter.getConversationId(currentUrl, root);
+      if (currentThreadId !== this.pending.threadId) {
+        if (this.pending.awaitingThreadAssignment) {
+          const userMatches = visibleMessages.some(
+            (m) => m.role === "user" && compactWhitespace(m.text) === compactWhitespace(this.pending.promptText)
+          );
+          if (userMatches) {
+            this.pending.threadId = currentThreadId;
+            this.pending.awaitingThreadAssignment = false;
+          } else {
+            this.state = "ABANDONED";
+            this.pending = null;
+            return;
+          }
+        } else {
+          this.state = "ABANDONED";
+          this.pending = null;
+          return;
+        }
       }
-      if (bufferType === null) {
-        bufferType = nextType;
-        bufferStart = position;
-        buffer = rawLine;
-      } else if (bufferType === nextType) {
-        buffer += rawLine;
+      if (quotaSignal && quotaSignal.status === "limited") {
+        this.transitionToRateLimited(quotaSignal.rateLimitMessage);
+        return;
+      }
+      const isGenerating = Boolean(this.adapter.findStopControl(root));
+      const assistantMessages = visibleMessages.filter(
+        (m) => m.role === "assistant" && !this.pending.knownAssistantIds.has(m.id)
+      );
+      const latestAssistant = assistantMessages.at(-1);
+      if (this.state === "SUBMITTED") {
+        this.state = "AWAITING_RESPONSE";
+      }
+      if (isGenerating || latestAssistant && latestAssistant.text.length > 0) {
+        this.state = "STREAMING";
+        this.pending.lastStreamingAt = now;
+        if (latestAssistant) {
+          this.pending.lastAssistantText = latestAssistant.text;
+        }
+      }
+      if (!isGenerating && this.state === "STREAMING" && this.pending.lastAssistantText) {
+        this.transitionToCompleted(this.pending.lastAssistantText);
+        return;
+      }
+      if (now - this.pending.startedAt > 10 * 6e4) {
+        this.state = "ABANDONED";
+        this.pending = null;
+      }
+    }
+    /**
+     * Explicitly handles user stopping or interrupting generation.
+     */
+    onUserCancel() {
+      if (this.pending && this.pending.lastAssistantText) {
+        this.transitionToCompleted(this.pending.lastAssistantText);
       } else {
-        flush(position);
-        bufferType = nextType;
-        bufferStart = position;
-        buffer = rawLine;
+        this.state = "ABANDONED";
+        this.pending = null;
       }
-      position += rawLine.length;
-      if (togglesFence) {
-        inCode = !inCode;
-      }
-    });
-    flush(position);
-    return sections;
-  }
-  function describeAttachments(attachments) {
-    return attachments.map((attachment, index) => {
-      const description = `[Attachment ${index + 1}] ${attachment.name}${attachment.sizeBytes ? ` \u2022 ${humanFileSize(attachment.sizeBytes)}` : ""}${attachment.pages ? ` \u2022 ${attachment.pages} pages` : ""}`;
-      return {
-        label: sectionLabel(description, "attachment"),
-        type: "attachment",
-        tokens: Math.ceil(description.length / 7 + (attachment.sizeBytes ? attachment.sizeBytes / 4 : 0) + (attachment.pages ?? 0) * 18),
-        start: 0,
-        end: description.length
+    }
+    transitionToCompleted(assistantText) {
+      if (!this.pending) return;
+      const outputTokens = estimateTokens(assistantText);
+      const measurement = makeMeasurement(this.adapter.site, this.pending.model, "visible provider DOM response");
+      const committed = {
+        id: this.pending.id,
+        clientEventId: this.pending.clientEventId,
+        site: this.adapter.site,
+        model: this.pending.model,
+        threadId: this.pending.threadId,
+        timestamp: Date.now(),
+        promptTokens: this.pending.promptTokens,
+        outputTokens,
+        totalTokens: this.pending.promptTokens + outputTokens,
+        promptChars: this.pending.promptChars,
+        outputChars: assistantText.length,
+        status: "completed",
+        accuracy: measurement.measurementLevel === "deterministic_local" ? "exact" : "calibrated",
+        measurement
       };
-    });
+      this.state = "COMPLETED";
+      this.pending = null;
+      this.onCommit(committed);
+      this.state = "IDLE";
+    }
+    transitionToRateLimited(_message) {
+      if (!this.pending) return;
+      const measurement = makeMeasurement(this.adapter.site, this.pending.model, "provider rate limit signal");
+      const committed = {
+        id: this.pending.id,
+        clientEventId: this.pending.clientEventId,
+        site: this.adapter.site,
+        model: this.pending.model,
+        threadId: this.pending.threadId,
+        timestamp: Date.now(),
+        promptTokens: this.pending.promptTokens,
+        outputTokens: 0,
+        totalTokens: this.pending.promptTokens,
+        promptChars: this.pending.promptChars,
+        outputChars: 0,
+        status: "rate_limited",
+        accuracy: "estimated",
+        measurement
+      };
+      this.state = "RATE_LIMITED";
+      this.pending = null;
+      this.onCommit(committed);
+      this.state = "IDLE";
+    }
+  };
+
+  // src/overlay/overlay-position.ts
+  var DEFAULT_PADDING = 12;
+  var DEFAULT_GAP = 8;
+  function finite(value, fallback) {
+    return Number.isFinite(value) ? Number(value) : fallback;
   }
-  function estimateOutputTokensFromPrompt(text, inputTokens) {
-    const normalized = text.toLowerCase();
-    const questionCount = (text.match(/\?/g) ?? []).length;
-    const detailBoost = [
-      "step by step",
-      "in detail",
-      "full code",
-      "comprehensive",
-      "thorough",
-      "explain",
-      "with examples"
-    ].filter((needle) => normalized.includes(needle)).length;
-    const conciseBoost = ["brief", "concise", "short answer", "one paragraph", "one sentence"].filter((needle) => normalized.includes(needle)).length;
-    const codeBoost = normalized.includes("```") || normalized.includes("typescript") || normalized.includes("javascript") || normalized.includes("python") ? 0.35 : 0;
-    const base = 200 + detailBoost * 300 + questionCount * 50 + (codeBoost > 0 ? 200 : 0) - conciseBoost * 100;
-    return Math.max(40, Math.min(4096, Math.round(base)));
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
   }
-  function estimateTokenBreakdown(text, attachments = []) {
-    const sharedEstimator = globalThis.YorTokenAccuracy?.estimateTokenBreakdown;
-    if (typeof sharedEstimator === "function") return sharedEstimator(text, attachments);
-    const sections = [...segmentText(text), ...describeAttachments(attachments)];
-    const textTokens = sum(sections.filter((section) => ["prose", "instruction", "quote"].includes(section.type)).map((section) => section.tokens));
-    const codeTokens = sum(sections.filter((section) => section.type === "code").map((section) => section.tokens));
-    const urlTokens = sum(sections.filter((section) => section.type === "url").map((section) => section.tokens));
-    const attachmentTokens = sum(sections.filter((section) => section.type === "attachment").map((section) => section.tokens));
-    const totalInputTokens = textTokens + codeTokens + urlTokens + attachmentTokens;
-    return {
-      textTokens,
-      codeTokens,
-      urlTokens,
-      attachmentTokens,
-      estimatedOutputTokens: estimateOutputTokensFromPrompt(text, totalInputTokens),
-      total: totalInputTokens,
-      sections
-    };
-  }
-  function estimateConversation(messages) {
-    let promptTokens = 0;
-    let outputTokens = 0;
-    let runningContext = 0;
-    const contextGrowth = [];
-    for (const message of messages) {
-      const tokens = estimateTokenBreakdown(message.text).total;
-      runningContext += tokens;
-      if (message.role === "assistant") {
-        outputTokens += tokens;
-      } else {
-        promptTokens += runningContext;
-      }
-      contextGrowth.push(runningContext);
+  function getOverlayPosition(anchor, viewport, overlay, options = {}) {
+    const padding = Math.max(0, finite(options.padding, DEFAULT_PADDING));
+    const gap = Math.max(0, finite(options.gap, DEFAULT_GAP));
+    const width = Math.max(0, finite(overlay?.width, 0));
+    const height = Math.max(0, finite(overlay?.height, 0));
+    const viewportWidth = Math.max(0, finite(viewport?.width, 0));
+    const viewportHeight = Math.max(0, finite(viewport?.height, 0));
+    const left = clamp(finite(anchor?.left, padding), padding, Math.max(padding, viewportWidth - width - padding));
+    const belowTop = finite(anchor?.bottom, padding) + gap;
+    const aboveTop = finite(anchor?.top, padding) - gap - height;
+    const anchorVisible = anchor?.bottom > 0 && anchor?.top < viewportHeight;
+    const fitsWidth = width <= viewportWidth - padding * 2;
+    const fitsBelow = anchorVisible && fitsWidth && belowTop >= padding && belowTop + height <= viewportHeight - padding;
+    const fitsAbove = anchorVisible && fitsWidth && aboveTop >= padding && aboveTop + height <= viewportHeight - padding;
+    if (fitsBelow) {
+      return { left, top: belowTop, placement: "below" };
+    }
+    if (fitsAbove) {
+      return { left, top: aboveTop, placement: "above" };
     }
     return {
-      promptTokens,
-      outputTokens,
-      totalTokens: promptTokens + outputTokens,
-      contextGrowth
+      left,
+      top: clamp(belowTop, padding, Math.max(padding, viewportHeight - height - padding)),
+      placement: "hidden"
     };
+  }
+  function applyOverlayPosition(element, anchor, viewport, overlay, options) {
+    const position = getOverlayPosition(anchor, viewport, overlay, options);
+    if (element?.style) {
+      element.style.left = `${position.left}px`;
+      element.style.top = `${position.top}px`;
+      element.style.bottom = "auto";
+      element.style.right = "auto";
+      element.style.visibility = position.placement === "hidden" ? "hidden" : "";
+    }
+    if (element?.dataset) {
+      element.dataset.placement = position.placement;
+    }
+    return position;
+  }
+  if (typeof globalThis !== "undefined") {
+    globalThis.YorOverlayPosition = { applyOverlayPosition, getOverlayPosition };
+  }
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { applyOverlayPosition, getOverlayPosition };
   }
 
-  // src/lib/promptOptimizer.ts
-  var PHRASE_REPLACEMENTS = [
-    [/\bplease\b/gi, ""],
-    [/\bkindly\b/gi, ""],
-    [/\bI would like you to\b/gi, ""],
-    [/\bmake sure that\b/gi, "ensure"],
-    [/\bin order to\b/gi, "to"],
-    [/\bas much as possible\b/gi, ""],
-    [/\bvery\b/gi, ""],
-    [/\bextremely\b/gi, ""],
-    [/\breally\b/gi, ""],
-    [/\bjust\b/gi, ""],
-    [/\bdo not hesitate to\b/gi, ""],
-    [/\bfor the purpose of\b/gi, "for"]
-  ];
-  function normalizeLine(line) {
-    return compactWhitespace(line.toLowerCase().replace(/[“”‘’"'`]/g, "").replace(/[^\p{L}\p{N}\s-]/gu, " "));
-  }
-  function compressSentence(sentence, mode) {
-    let result = sentence;
-    for (const [pattern, replacement] of PHRASE_REPLACEMENTS) {
-      result = result.replace(pattern, replacement);
+  // src/content/index.ts
+  function getDraftTokenBreakdown(text, attachments = []) {
+    const engine = globalThis.YorTokenAccuracy;
+    if (engine?.estimateTokenBreakdown) {
+      return engine.estimateTokenBreakdown(text, attachments);
     }
-    result = compactWhitespace(result);
-    if (mode === "shorter") {
-      result = result.replace(/\b(?:could you|can you|would you|I need you to)\b/gi, "").replace(/\b(?:thank you|thanks)\b/gi, "").replace(/\s+,/g, ",").replace(/\s+\./g, ".");
-    }
-    return result.trim();
-  }
-  function uniqueNonEmptyLines(text) {
-    const seen = /* @__PURE__ */ new Set();
-    const output = [];
-    for (const rawLine of text.split(/\n+/)) {
-      const line = compactWhitespace(rawLine);
-      if (!line) continue;
-      const key = normalizeLine(line);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      output.push(line);
-    }
-    return output;
-  }
-  function splitStructuredSections(lines) {
-    const sections = {
-      goal: [],
-      context: [],
-      constraints: [],
-      output: []
-    };
-    for (const line of lines) {
-      const normalized = normalizeLine(line);
-      if (!sections.goal.length && (line.endsWith("?") || /^(goal|task|objective)\s*:/i.test(line))) {
-        sections.goal.push(line.replace(/^(goal|task|objective)\s*:/i, "").trim());
-        continue;
-      }
-      if (/^(format|output|return)\s*:/i.test(line) || /\b(return|respond with|format as|table|json|markdown)\b/i.test(line)) {
-        sections.output.push(line.replace(/^(format|output|return)\s*:/i, "").trim());
-        continue;
-      }
-      if (/\b(avoid|must|should|only|do not|don't|without|limit|preserve|keep)\b/i.test(normalized)) {
-        sections.constraints.push(line);
-        continue;
-      }
-      sections.context.push(line);
-    }
-    if (!sections.goal.length && lines.length) {
-      sections.goal.push(lines[0]);
-      sections.context = lines.slice(1);
-    }
-    return sections;
-  }
-  function buildVariant(text, mode) {
-    const lines = uniqueNonEmptyLines(text).map((line) => compressSentence(line, mode));
-    const structured = splitStructuredSections(lines);
-    const contextLimit = mode === "shorter" ? 4 : mode === "balanced" ? 6 : 10;
-    const constraintLimit = mode === "shorter" ? 4 : 8;
-    const outputLimit = mode === "shorter" ? 3 : 6;
-    const parts = [];
-    if (structured.goal.length) {
-      parts.push(`Goal: ${structured.goal[0]}`);
-    }
-    if (structured.context.length) {
-      parts.push(`Context:
-${structured.context.slice(0, contextLimit).map((line) => `- ${line}`).join("\n")}`);
-    }
-    if (structured.constraints.length) {
-      parts.push(`Constraints:
-${structured.constraints.slice(0, constraintLimit).map((line) => `- ${line}`).join("\n")}`);
-    }
-    if (structured.output.length) {
-      parts.push(`Output:
-${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}`);
-    }
-    if (mode === "shorter") {
-      parts.push("Use the shortest path that preserves accuracy.");
-    }
-    return compactWhitespace(parts.join("\n\n"));
-  }
-  function findRepeatedInstructions(text) {
-    const lines = text.split(/\n+/).map((line) => compactWhitespace(line)).filter((line) => line.length > 10);
-    const counts = /* @__PURE__ */ new Map();
-    const repeated = [];
-    for (const line of lines) {
-      const key = normalizeLine(line);
-      if (!key) continue;
-      if (counts.has(key)) {
-        repeated.push(line);
-      } else {
-        counts.set(key, line);
-      }
-    }
-    return unique(repeated).slice(0, 6);
-  }
-  function findRedundantSections(text) {
-    const paragraphs = text.split(/\n{2,}/).map((block) => compactWhitespace(block)).filter((block) => block.length > 32);
-    const redundant = [];
-    const seen = /* @__PURE__ */ new Set();
-    for (const paragraph of paragraphs) {
-      const key = normalizeLine(paragraph);
-      if (seen.has(key)) {
-        redundant.push(paragraph);
-        continue;
-      }
-      seen.add(key);
-      if (/\b(please|ensure|make sure|important|must|definitely)\b/gi.test(paragraph) && paragraph.length > 220) {
-        redundant.push(paragraph);
-      }
-    }
-    return unique(redundant).slice(0, 5);
-  }
-  function buildSuggestions(text, breakdownTotal, repeatedInstructions, redundantSections) {
-    const suggestions = [];
-    const lines = uniqueNonEmptyLines(text);
-    const codeHeavy = text.includes("```");
-    const quoteHeavy = /^>\s/m.test(text);
-    const largePaste = breakdownTotal >= 1600 || text.length > 6500;
-    if (repeatedInstructions.length) {
-      const duplicateTokens = repeatedInstructions.reduce((acc, line) => acc + estimateSectionTokens(line, "instruction"), 0);
-      suggestions.push({
-        id: "repeat",
-        title: "Remove repeated instructions",
-        description: "The prompt repeats guidance that the model only needs once.",
-        estimatedSavings: Math.max(40, duplicateTokens),
-        severity: "medium",
-        applyVariant: "shorter"
-      });
-    }
-    if (redundantSections.length) {
-      suggestions.push({
-        id: "redundant",
-        title: "Trim redundant framing",
-        description: "Long preambles and repeated reassurance rarely improve output quality.",
-        estimatedSavings: Math.round(breakdownTotal * 0.12),
-        severity: "medium",
-        applyVariant: "balanced"
-      });
-    }
-    if (largePaste) {
-      suggestions.push({
-        id: "large-paste",
-        title: "Summarize or chunk long context",
-        description: "The prompt looks like a large paste. Summarize first or send only the relevant excerpt.",
-        estimatedSavings: Math.round(breakdownTotal * 0.28),
-        severity: "high",
-        applyVariant: "shorter"
-      });
-    }
-    if (codeHeavy) {
-      suggestions.push({
-        id: "code-heavy",
-        title: "Share only the diff or relevant file sections",
-        description: "Large code blocks are token expensive. Ask for the exact function, stack trace, or patch instead.",
-        estimatedSavings: Math.round(breakdownTotal * 0.18),
-        severity: "medium",
-        applyVariant: "balanced"
-      });
-    }
-    if (quoteHeavy) {
-      suggestions.push({
-        id: "quotes",
-        title: "Trim quoted context",
-        description: "Quoted text often duplicates what the current thread already contains.",
-        estimatedSavings: Math.round(breakdownTotal * 0.14),
-        severity: "low",
-        applyVariant: "shorter"
-      });
-    }
-    if (lines.length >= 9) {
-      suggestions.push({
-        id: "phase",
-        title: "Ask in phases",
-        description: "Split the request into stages so the model only loads the context it needs now.",
-        estimatedSavings: Math.round(breakdownTotal * 0.2),
-        severity: "medium",
-        applyVariant: "balanced"
-      });
-    }
-    return suggestions.slice(0, 6);
-  }
-  function buildVariants(text) {
+    const total = Math.ceil((text?.length || 0) / 4);
     return {
-      shorter: buildVariant(text, "shorter"),
-      balanced: buildVariant(text, "balanced"),
-      maxDetail: buildVariant(text, "maxDetail")
+      total,
+      sections: [{ name: "composer", tokens: total }],
+      measurement: {
+        measurementLevel: "approximation",
+        tokenizer: "none",
+        confidence: "estimated",
+        errorMarginPercent: 40
+      }
     };
   }
-  function createMeasurement(options = {}) {
-    const sharedMeasurement = globalThis.YorTokenAccuracy?.createMeasurement;
-    if (typeof sharedMeasurement === "function") return sharedMeasurement(options);
+  function getMeasurement(provider, model) {
+    const engine = globalThis.YorTokenAccuracy;
+    if (engine?.createMeasurement) {
+      return engine.createMeasurement({ provider, model });
+    }
     return {
-      schemaVersion: 1,
-      measurementMethod: "dom-text-heuristic",
       measurementLevel: "approximation",
-      confidence: 0.5,
-      errorMarginPercent: 40,
-      provider: String(options.provider ?? "generic").slice(0, 64),
-      model: String(options.model ?? "unknown").slice(0, 120),
       tokenizer: "none",
-      source: String(options.source ?? "visible provider DOM text").slice(0, 160),
-      note: "Visible text only; ±40% is calibrated against an OpenAI BPE reference, not provider billing."
+      confidence: "estimated",
+      errorMarginPercent: 40
     };
   }
-  function analyzePrompt(text, measurementOptions = {}) {
-    const breakdown = estimateTokenBreakdown(text);
-    const repeatedInstructions = findRepeatedInstructions(text);
-    const redundantSections = findRedundantSections(text);
-    const suggestions = buildSuggestions(text, breakdown.total, repeatedInstructions, redundantSections);
-    const variants = buildVariants(text);
-    const variantSavings = Object.values(variants).map((variant) => Math.max(0, breakdown.total - estimateTokenBreakdown(variant).total));
-    const bestSavings = Math.max(0, ...variantSavings, ...suggestions.map((item) => item.estimatedSavings));
-    return {
-      inputTokens: breakdown.total,
-      outputTokensEstimate: breakdown.estimatedOutputTokens,
-      totalTokens: breakdown.total + breakdown.estimatedOutputTokens,
-      sections: breakdown.sections,
-      suggestions,
-      variants,
-      repeatedInstructions,
-      redundantSections,
-      largePaste: breakdown.total >= 1600 || text.length > 6500,
-      compressionScore: clamp(Math.round(bestSavings / Math.max(1, breakdown.total) * 100), 0, 100),
-      measurement: createMeasurement(measurementOptions)
-    };
+  function formatRemainingDuration(targetMs, now) {
+    const diffMs = Math.max(0, targetMs - now);
+    const totalMins = Math.round(diffMs / 6e4);
+    const hours = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    if (hours > 0 && mins > 0) {
+      return `~${hours}h ${mins}m`;
+    }
+    if (hours > 0) {
+      return `~${hours}h`;
+    }
+    if (mins > 0) {
+      return `~${mins}m`;
+    }
+    return "<1m";
   }
-
-  // src/lib/format.ts
-  function formatTokens(tokens) {
-    if (tokens === void 0 || Number.isNaN(tokens)) return "\u2014";
-    if (tokens >= 1e6) return `${round(tokens / 1e6, 2)}M`;
-    if (tokens >= 1e3) return `${round(tokens / 1e3, 1)}K`;
-    return `${Math.round(tokens)}`;
-  }
-  function formatPercent(value) {
-    if (value === void 0 || Number.isNaN(value)) return "\u2014";
-    return `${round(clamp(value, 0, 100), value > 10 ? 0 : 1)}%`;
-  }
-  function formatDateTime(timestamp) {
-    if (!timestamp) return "Unknown";
-    return new Intl.DateTimeFormat(void 0, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit"
-    }).format(new Date(timestamp));
-  }
-  function formatDuration(ms) {
-    if (ms === void 0) return "\u2014";
-    if (ms <= 0) return "now";
-    const totalSeconds = Math.floor(ms / 1e3);
-    const days = Math.floor(totalSeconds / 86400);
-    const hours = Math.floor(totalSeconds % 86400 / 3600);
-    const minutes = Math.floor(totalSeconds % 3600 / 60);
-    const seconds = totalSeconds % 60;
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    if (minutes > 0) return `${minutes}m ${seconds}s`;
-    return `${seconds}s`;
-  }
-
-  // src/lib/resetPredictor.ts
-  function parseAnchor(anchor = "00:00") {
-    const [hours, minutes] = anchor.split(":").map((value) => Number.parseInt(value, 10));
-    return {
-      hours: Number.isFinite(hours) ? hours : 0,
-      minutes: Number.isFinite(minutes) ? minutes : 0
-    };
+  function parseAnchor(timeStr) {
+    if (!timeStr) return { hours: 0, minutes: 0 };
+    const [h, m] = timeStr.split(":").map((v) => Number.parseInt(v, 10) || 0);
+    return { hours: h ?? 0, minutes: m ?? 0 };
   }
   function getUtcDailyWindowBounds(rule, now) {
-    const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
+    const { hours, minutes } = parseAnchor(rule?.anchorLocalTime);
     const current = new Date(now);
     const anchor = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
     const start = anchor > now ? anchor - 864e5 : anchor;
     return { start, end: start + 864e5 };
   }
   function getUtcWeeklyWindowBounds(rule, now) {
-    const targetDay = rule.dayOfWeek ?? 1;
-    const { hours, minutes } = parseAnchor(rule.anchorLocalTime);
+    const targetDay = rule?.dayOfWeek ?? 1;
+    const { hours, minutes } = parseAnchor(rule?.anchorLocalTime);
     const current = new Date(now);
     const anchorToday = Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate(), hours, minutes, 0, 0);
     const delta = (current.getUTCDay() - targetDay + 7) % 7;
@@ -969,1192 +1011,375 @@ ${structured.output.slice(0, outputLimit).map((line) => `- ${line}`).join("\n")}
     return { start, end: start + 7 * 864e5 };
   }
   function getCurrentWindowBounds(rule, now = Date.now()) {
-    switch (rule.kind) {
-      case "rolling": {
-        const intervalMs = (rule.intervalMinutes ?? 180) * 6e4;
-        return { start: now - intervalMs, end: now + intervalMs };
-      }
-      case "hourly": {
-        const intervalMinutes = rule.intervalMinutes ?? 60;
-        const current = new Date(now);
-        const minutes = current.getMinutes();
-        const snappedMinutes = Math.floor(minutes / intervalMinutes) * intervalMinutes;
-        current.setMinutes(snappedMinutes, 0, 0);
-        const start = current.getTime();
-        return { start, end: start + intervalMinutes * 6e4 };
-      }
-      case "daily": {
-        return getUtcDailyWindowBounds(rule, now);
-      }
-      case "weekly": {
-        return getUtcWeeklyWindowBounds(rule, now);
-      }
-      case "custom": {
-        const intervalMs = (rule.intervalMinutes ?? 1440) * 6e4;
-        return { start: now - intervalMs, end: now + intervalMs };
-      }
-      case "unknown":
-      default:
-        return {};
-    }
+    return getUtcWeeklyWindowBounds(rule, now);
   }
   function predictReset(options) {
-    const now = options.now ?? Date.now();
-    const explicitResetAt = options.explicitResetAt;
-    const rule = options.rule ?? { kind: "unknown", inferred: true };
+    const { now, rule, explicitResetAt } = options;
     if (explicitResetAt && explicitResetAt > now) {
-      return {
-        resetAt: explicitResetAt,
-        remainingMs: explicitResetAt - now,
-        windowEnd: explicitResetAt,
-        localLabel: formatDateTime(explicitResetAt),
-        kind: rule.kind,
-        confidence: "estimated",
-        explanation: "Parsed from a visible UI alert; not verified against provider account data."
-      };
+      return { resetAt: explicitResetAt, confidence: "provider_reported" };
     }
-    if (rule.inferred) {
-      return { localLabel: "Unknown", kind: "unknown", confidence: "inferred", explanation: "Provider reset unavailable. Default schedules are not evidence of an account reset." };
+    if (!rule || rule.inferred) {
+      return { resetAt: void 0, confidence: "unknown" };
     }
-    switch (rule.kind) {
-      case "rolling": {
-        const intervalMs = (rule.intervalMinutes ?? 180) * 6e4;
-        const recentEvents = [...options.events ?? []].filter((event) => event.timestamp >= now - intervalMs).sort((a, b) => a.timestamp - b.timestamp);
-        const oldest = recentEvents[0]?.timestamp ?? now;
-        const resetAt = oldest + intervalMs;
-        return {
-          resetAt,
-          remainingMs: Math.max(0, resetAt - now),
-          windowStart: oldest,
-          windowEnd: resetAt,
-          localLabel: formatDateTime(resetAt),
-          kind: "rolling",
-          confidence: rule.inferred ? "inferred" : "estimated",
-          explanation: recentEvents.length ? "Estimated from the oldest observed event inside the rolling usage window." : "Estimated from the configured rolling window because no exact reset signal was available."
-        };
-      }
-      case "hourly":
-      case "daily":
-      case "weekly":
-      case "custom": {
-        const { start, end } = getCurrentWindowBounds(rule, now);
-        return {
-          resetAt: end,
-          remainingMs: end ? Math.max(0, end - now) : void 0,
-          windowStart: start,
-          windowEnd: end,
-          localLabel: end ? formatDateTime(end) : "Unknown",
-          kind: rule.kind,
-          confidence: rule.inferred ? "inferred" : "estimated",
-          explanation: "Estimated from the configured reset schedule."
-        };
-      }
-      case "unknown":
-      default:
-        return {
-          localLabel: "Unknown",
-          kind: "unknown",
-          confidence: "inferred",
-          explanation: "No explicit reset rule or rate-limit signal was detected yet."
-        };
+    if (rule.kind === "weekly") {
+      const bounds = getUtcWeeklyWindowBounds(rule, now);
+      return { resetAt: bounds.end, confidence: "estimated" };
     }
+    if (rule.kind === "daily") {
+      const bounds = getUtcDailyWindowBounds(rule, now);
+      return { resetAt: bounds.end, confidence: "estimated" };
+    }
+    return { resetAt: void 0, confidence: "unknown" };
   }
   function computeQuotaStatus(options) {
-    const now = options.now ?? Date.now();
-    const rule = options.rule ?? { kind: "unknown", inferred: true };
-    const prediction = predictReset({
-      events: options.events,
-      rule,
-      explicitResetAt: options.explicitResetAt,
-      now
-    });
-    const currentWindowEvents = (() => {
-      if (rule.kind === "rolling") {
-        const intervalMs = (rule.intervalMinutes ?? 180) * 6e4;
-        return options.events.filter((event) => event.timestamp >= now - intervalMs);
-      }
-      if (prediction.windowStart !== void 0) {
-        return options.events.filter((event) => event.timestamp >= prediction.windowStart);
-      }
-      return options.events;
-    })();
-    const usedTokens = sum(currentWindowEvents.map((event) => event.totalTokens));
-    const remainingTokens = options.tokenBudget !== void 0 ? Math.max(0, options.tokenBudget - usedTokens) : options.remainingTokensHint;
-    const percentUsed = options.tokenBudget !== void 0 ? clamp(usedTokens / Math.max(1, options.tokenBudget) * 100, 0, 100) : options.percentUsedHint;
-    let status = options.statusHint ?? "unknown";
-    if (status === "unknown") {
-      if (currentWindowEvents.some((event) => event.status === "rate_limited")) {
-        status = "limited";
-      } else if (percentUsed !== void 0 && percentUsed >= 100) {
-        status = "limited";
-      } else if (percentUsed !== void 0 && percentUsed >= 85) {
-        status = "warning";
-      } else if (currentWindowEvents.length > 0) {
-        status = "ok";
-      }
-    }
-    const accuracy = "estimated";
+    const { now, explicitResetAt, rule } = options;
+    const resetInfo = predictReset({ now, rule, explicitResetAt });
     return {
-      usedTokens,
-      remainingTokens,
-      percentUsed,
-      status,
-      quotaTier: options.quotaTier,
-      resetRule: rule,
-      accuracy,
-      explicitResetAt: options.explicitResetAt,
-      nextReset: prediction
+      status: explicitResetAt && explicitResetAt > now ? "limited" : "ok",
+      accuracy: explicitResetAt ? "provider_reported" : "estimated",
+      resetAt: resetInfo.resetAt
     };
   }
-
-  // src/lib/runtime.ts
-  async function sendRuntimeMessage(message) {
-    return chrome.runtime.sendMessage(message);
-  }
-
-  // src/content/overlay.ts
-  var DEFAULT_CONTEXT_WINDOWS = {
-    chatgpt: 128e3,
-    claude: 2e5,
-    gemini: 1e6,
-    perplexity: 2e5,
-    grok: 128e3,
-    generic: 128e3
+  var SelectorSiteAdapter = class {
+    constructor(config) {
+      this.config = config;
+    }
+    config;
   };
-  var MODEL_CONTEXT_WINDOWS = {
-    "gpt-5.5": 1e6,
-    "gpt-5.4": 1e6,
-    "gpt-5.4-mini": 128e3,
-    "gpt-5.4-nano": 128e3,
-    "gpt-4o": 128e3,
-    "gpt-4o-mini": 128e3,
-    "gpt-4.1": 1e6,
-    "gpt-4.1-mini": 1e6,
-    "gpt-4.1-nano": 1e6,
-    o3: 2e5,
-    "o3-mini": 2e5,
-    "o4-mini": 2e5,
-    "claude-opus-4.7": 1e6,
-    "claude-opus-4.1": 2e5,
-    "claude-opus-3": 2e5,
-    "claude-sonnet-4.6": 1e6,
-    "claude-sonnet": 2e5,
-    "claude-haiku-4.5": 2e5,
-    "claude-haiku-3.5": 2e5,
-    "gemini-pro": 1e6,
-    "gemini-2.5-flash": 1e6,
-    "gemini-2.5-flash-lite": 1e6,
-    "gemini-2.0-flash": 1e6,
-    "gemini-2.0-flash-lite": 1e6,
-    "sonar-pro": 2e5,
-    "grok-3": 128e3,
-    "grok-3-mini": 131072
-  };
-  function normalizeModelKey(value) {
-    return String(value ?? "").toLowerCase().replace(/\bmodel\b/g, "").replace(/\bnew\b/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  function getAdapterForCurrentSite() {
+    if (typeof window !== "undefined" && window.location) {
+      return getAdapterForUrl(new URL(window.location.href));
+    }
+    return null;
   }
-  var MODEL_CONTEXT_LOOKUP = Object.fromEntries(Object.keys(MODEL_CONTEXT_WINDOWS).map((id) => [normalizeModelKey(id), id]));
-  var MODEL_CONTEXT_MATCHERS = [
-    [/^gpt-5-5/, "gpt-5.5"],
-    [/^gpt-5-4-mini/, "gpt-5.4-mini"],
-    [/^gpt-5-4-nano/, "gpt-5.4-nano"],
-    [/^gpt-5-4/, "gpt-5.4"],
-    [/^gpt-4o-mini|^gpt-4-o-mini/, "gpt-4o-mini"],
-    [/^gpt-4o|^gpt-4-o/, "gpt-4o"],
-    [/^gpt-4-1-mini/, "gpt-4.1-mini"],
-    [/^gpt-4-1-nano/, "gpt-4.1-nano"],
-    [/^gpt-4-1/, "gpt-4.1"],
-    [/^o4-mini/, "o4-mini"],
-    [/^o3-mini/, "o3-mini"],
-    [/^o3/, "o3"],
-    [/claude.*opus.*4-(7|6|5)|opus.*4-(7|6|5)/, "claude-opus-4.7"],
-    [/claude.*opus.*4-1|opus.*4-1|claude.*opus.*4|opus.*4/, "claude-opus-4.1"],
-    [/claude.*opus.*3|opus.*3/, "claude-opus-3"],
-    [/claude.*sonnet.*4-6|sonnet.*4-6/, "claude-sonnet-4.6"],
-    [/claude.*sonnet|sonnet/, "claude-sonnet"],
-    [/claude.*haiku.*4-5|haiku.*4-5/, "claude-haiku-4.5"],
-    [/claude.*haiku.*3-5|haiku.*3-5/, "claude-haiku-3.5"],
-    [/claude.*haiku|haiku/, "claude-haiku-4.5"],
-    [/gemini.*2-5.*flash-lite|gemini-2-5-flash-lite/, "gemini-2.5-flash-lite"],
-    [/gemini.*2-5.*flash|gemini-2-5-flash/, "gemini-2.5-flash"],
-    [/gemini.*2-0.*flash-lite|gemini-2-0-flash-lite/, "gemini-2.0-flash-lite"],
-    [/gemini.*2-0.*flash|gemini-2-0-flash/, "gemini-2.0-flash"],
-    [/gemini.*pro|gemini-pro/, "gemini-pro"],
-    [/gemini.*flash-lite|flash-lite/, "gemini-2.5-flash-lite"],
-    [/gemini.*flash|flash/, "gemini-2.5-flash"],
-    [/sonar.*pro|perplexity.*pro/, "sonar-pro"],
-    [/grok.*3.*mini|grok-3-mini/, "grok-3-mini"],
-    [/grok.*3|grok-3/, "grok-3"]
-  ];
-  function resolveModelContextWindow(model, site = "generic") {
-    const key = normalizeModelKey(model);
-    const exactId = MODEL_CONTEXT_LOOKUP[key];
-    if (exactId) return MODEL_CONTEXT_WINDOWS[exactId];
-    for (const [pattern, id] of MODEL_CONTEXT_MATCHERS) {
-      if (pattern.test(key)) return MODEL_CONTEXT_WINDOWS[id];
-    }
-    return DEFAULT_CONTEXT_WINDOWS[site] ?? DEFAULT_CONTEXT_WINDOWS.generic;
-  }
-  function escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    })[char]);
-  }
-  function lastByRole(messages, role) {
-    return [...messages].reverse().find((message) => message.role === role);
-  }
-  function tokensForMessage(message) {
-    return message ? estimateTokenBreakdown(message.text).total : void 0;
-  }
-  function formatShortTime(timestamp) {
-    return timestamp ? formatDateTime(timestamp) : "No captures yet";
-  }
-  function formatInteger(value) {
-    return new Intl.NumberFormat(void 0, {
-      maximumFractionDigits: 0
-    }).format(Math.max(0, Math.round(value || 0)));
-  }
-  function activeLengthTokens(state) {
-    return (state.conversation?.totalTokens ?? 0) + (state.currentInput?.trim() ? state.analysis.inputTokens : 0);
-  }
-  function buildOverlaySummary(state) {
-    const lastUser = lastByRole(state.messages ?? [], "user");
-    const lastAssistant = lastByRole(state.messages ?? [], "assistant");
-    const lastEvent = state.lastEvent;
-    return [
-      "Yor Token Usage",
-      `${SITE_LABELS[state.site] ?? state.site} - ${state.model || "Unknown model"}`,
-      `Draft input: ${formatTokens(state.analysis.inputTokens)}`,
-      `Draft output estimate: ${formatTokens(state.analysis.outputTokensEstimate)}`,
-      `Thread total: ${formatTokens(state.conversation.totalTokens)}`,
-      `Thread messages: ${state.messages?.length ?? 0}`,
-      `Locally captured tokens (estimated): ${formatTokens(state.quota.usedTokens)}`,
-      `Quota: ${state.quota.remainingTokens !== void 0 ? `${formatTokens(state.quota.remainingTokens)} remaining` : state.quota.percentUsed !== void 0 ? formatPercent(state.quota.percentUsed) : "budget not set"}`,
-      `Reset estimate: ${state.quota.nextReset?.localLabel ?? "unknown"}`,
-      `Today: ${formatTokens(state.summary?.tokensToday ?? 0)}`,
-      `7-day total: ${formatTokens(state.summary?.tokensThisWeek ?? 0)}`,
-      `Last captured exchange: ${lastEvent ? `${formatTokens(lastEvent.totalTokens)} on ${formatShortTime(lastEvent.timestamp)}` : "none"}`,
-      `Last user message: ${lastUser ? `${formatTokens(tokensForMessage(lastUser))} - ${truncate(lastUser.text, 120)}` : "not detected"}`,
-      `Last assistant message: ${lastAssistant ? `${formatTokens(tokensForMessage(lastAssistant))} - ${truncate(lastAssistant.text, 120)}` : "not detected"}`
-    ].join("\n");
-  }
-  var styles = `
-:host {
-  all: initial;
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 2147483647;
-  display: block;
-  overflow: visible;
-  pointer-events: none;
-  contain: none;
-}
-* { box-sizing: border-box; }
-button:focus-visible {
-  outline: 2px solid rgba(143, 220, 196, 0.76);
-  outline-offset: 2px;
-}
-.yor-root {
-  position: absolute;
-  right: 18px;
-  bottom: 18px;
-  width: min(430px, calc(100vw - 24px));
-  min-width: min(320px, calc(100vw - 24px));
-  color: #f4f1ea;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 12px;
-  line-height: 1.35;
-  pointer-events: auto;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --dur-fast: 150ms;
-  --dur-med: 220ms;
-}
-.yor-usage-window {
-  position: fixed;
-  top: 96px;
-  left: 88px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: max-content;
-  max-width: min(430px, calc(100vw - 24px));
-  border: 1px solid rgba(244,241,234,0.15);
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: rgba(15, 15, 17, 0.94);
-  backdrop-filter: blur(14px);
-  color: rgba(244,241,234,0.74);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1.25;
-  text-align: left;
-  pointer-events: auto;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.55);
-  box-shadow: 0 10px 26px rgba(0,0,0,0.32);
-  animation: yor-fade-in var(--dur-med) var(--ease-out) both;
-  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
-}
-.yor-usage-window:hover { opacity: 0.96; transform: translateY(-1px); border-color: rgba(244,241,234,0.28); }
-.yor-usage-window:active { transform: translateY(0); }
-.yor-usage-item { display: grid; gap: 2px; min-width: 52px; }
-.yor-usage-label { color: rgba(244,241,234,0.72); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
-.yor-usage-value { color: #fffaf2; font-size: 13px; font-weight: 760; white-space: nowrap; }
-.yor-usage-item:first-child .yor-usage-value { color: #2f9cf5; }
-.yor-usage-item { min-width: 0; }
-.yor-usage-value { white-space: normal; overflow-wrap: anywhere; }
-.yor-usage-divider { width: 1px; height: 26px; background: rgba(244,241,234,0.12); flex: 0 0 auto; }
-.yor-card {
-  position: fixed;
-  max-width: min(430px, calc(100vw - 24px));
-  width: 100%;
-  min-width: 0;
-  border-radius: 8px;
-  overflow: auto;
-  background: rgba(15, 15, 17, 0.97);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(244, 241, 234, 0.16);
-  box-shadow: 0 22px 60px rgba(0,0,0,0.52);
-  animation: yor-fade-in var(--dur-med) var(--ease-out) both;
-}
-.yor-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
-  background: linear-gradient(180deg, rgba(244,241,234,0.075), rgba(244,241,234,0.025));
-  border-bottom: 1px solid rgba(244,241,234,0.10);
-}
-.yor-title { display:grid; gap:7px; min-width:0; }
-.yor-brand { display:flex; align-items:center; gap:8px; min-width:0; }
-.yor-brand strong { font-size: 14px; letter-spacing: 0; color:#fffaf2; white-space:nowrap; }
-.yor-status {
-  border: 1px solid rgba(127, 209, 185, 0.34);
-  border-radius: 999px;
-  color: #9fe5cf;
-  font-size: 10px;
-  font-weight: 720;
-  padding: 2px 7px;
-  white-space: nowrap;
-}
-.yor-meta { font-size: 11px; color: rgba(244,241,234,0.68); overflow-wrap: anywhere; }
-.yor-quickline {
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  gap: 4px 9px;
-  color: rgba(244,241,234,0.72);
-  font-size: 12px;
-}
-.yor-quickline strong { color:#fffaf2; font-size: 13px; }
-.yor-quickline span { white-space:nowrap; }
-.yor-body { padding: 12px; display: grid; gap: 11px; }
-.yor-body::-webkit-scrollbar { width: 10px; }
-.yor-body::-webkit-scrollbar-thumb {
-  background: rgba(244,241,234,0.18);
-  border: 3px solid rgba(15,15,17,0.97);
-  border-radius: 999px;
-}
-.yor-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
-.yor-stat { padding: 9px; border-radius: 8px; background: rgba(244,241,234,0.055); border: 1px solid rgba(244,241,234,0.07); display:grid; gap:4px; min-width: 0; }
-.yor-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(244,241,234,0.58); }
-.yor-stat-value { font-size: 15px; font-weight: 760; overflow-wrap: anywhere; color:#fffaf2; }
-.yor-stat-note { font-size: 10px; color: rgba(244,241,234,0.58); overflow-wrap: anywhere; }
-.yor-section { display: grid; gap: 8px; }
-.yor-section-head { display:flex; justify-content:space-between; align-items:center; gap:10px; color: rgba(244,241,234,0.64); font-size: 11px; }
-.yor-section-head strong { color:#fffaf2; font-size:12px; }
-.yor-meter { height: 7px; border-radius: 999px; background: rgba(244,241,234,0.10); overflow: hidden; }
-.yor-meter > span { display:block; height:100%; border-radius:inherit; background: linear-gradient(90deg, #7fd1b9, #d5a853 70%, #e06d52); transition: width var(--dur-med) var(--ease-out); }
-.yor-rows { display:grid; gap: 6px; }
-.yor-row { display:grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 8px; align-items:start; padding: 8px; border-radius: 8px; background: rgba(244,241,234,0.045); border: 1px solid rgba(244,241,234,0.06); animation: yor-list-in var(--dur-med) var(--ease-out) both; transition: border-color var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard); }
-.yor-row:hover { border-color: rgba(244,241,234,0.12); transform: translateX(1px); }
-.yor-row-label { color: rgba(244,241,234,0.58); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; }
-.yor-row-main { min-width:0; color: rgba(244,241,234,0.86); overflow-wrap:anywhere; }
-.yor-row-main strong { display:block; color:#fffaf2; margin-bottom: 2px; font-size: 12px; }
-.yor-row-value { color:#fffaf2; font-weight:700; white-space:nowrap; }
-.yor-list { margin:0; padding:0; display:grid; gap: 6px; list-style:none; color: rgba(244,241,234,0.86); }
-.yor-list li { padding: 8px; border-radius: 8px; background: rgba(244,241,234,0.045); border: 1px solid rgba(244,241,234,0.06); animation: yor-list-in var(--dur-med) var(--ease-out) both; }
-.yor-actions { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:7px; }
-.yor-button {
-  border:1px solid rgba(244,241,234,0.13); border-radius:8px; padding:8px 10px; cursor:pointer; color:#fffaf2;
-  background: rgba(244,241,234,0.07); font: inherit; font-size:12px; font-weight:650; min-width:0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
-}
-.yor-button.primary { background: #9fe5cf; color: #101112; border:0; }
-.yor-button:hover { border-color: rgba(244,241,234,0.22); transform: translateY(-1px); }
-.yor-button:active { transform: translateY(0) scale(0.985); }
-.yor-button:disabled { cursor: default; opacity: 0.45; }
-.yor-icon-button {
-  width: 74px;
-  flex: 0 0 auto;
-}
-.yor-hidden { display:none; }
-@keyframes yor-list-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes yor-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@media (max-width: 319px) {
-  .yor-root { display: none !important; }
-}
-@media (min-width: 320px) and (max-width: 768px) {
-  .yor-root { right: 10px; left: 10px; width: auto; min-width: 0; bottom: 10px; }
-  .yor-usage-window { top: 70px; left: 14px; right: 14px; max-width: none; width: auto; justify-content: space-between; }
-  .yor-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .yor-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .yor-row { grid-template-columns: 72px minmax(0, 1fr); }
-  .yor-row-value { grid-column: 2; }
-}
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    scroll-behavior: auto !important;
-    transition: none !important;
-  }
-}
-`;
-  var OverlayWidget = class {
-    container;
-    shadow;
-    visible = true;
-    collapsed = true;
-    state;
-    callbacks;
-    refs = {};
-    constructor(callbacks) {
-      this.callbacks = callbacks;
-      this.container = document.createElement("div");
-      this.container.className = "yor-token-usage-root";
-      Object.assign(this.container.style, {
-        position: "fixed",
-        inset: "0",
-        width: "100vw",
-        height: "100vh",
-        zIndex: "2147483647",
-        overflow: "visible",
-        pointerEvents: "none",
-        contain: "none"
-      });
-      this.container.style.display = "none";
-      this.shadow = this.container.attachShadow({ mode: "open" });
-      const style = document.createElement("style");
-      style.textContent = styles;
-      this.shadow.append(style);
-      this.mountShell();
-      this.shadow.addEventListener("click", (event) => this.handleClick(event));
-      document.documentElement.appendChild(this.container);
-    }
-    mountShell() {
-      const template = document.createElement("template");
-      template.innerHTML = `
-      <div class="yor-root" data-ref="root">
-        <button class="yor-usage-window" data-action="toggle" data-ref="pageMeter" title="Open Yor Token Usage details">
-          <span class="yor-usage-item">
-            <span class="yor-usage-label" data-ref="meterQuotaLabel">YOR · Quota</span>
-            <strong class="yor-usage-value" data-ref="meterPercent"></strong>
-          </span>
-          <span class="yor-usage-divider" aria-hidden="true"></span>
-          <span class="yor-usage-item">
-            <span class="yor-usage-label">Visible tokens ≈</span>
-            <strong class="yor-usage-value" data-ref="meterTokens"></strong>
-          </span>
-          <span class="yor-usage-divider" aria-hidden="true"></span>
-          <span class="yor-usage-item">
-            <span class="yor-usage-label">Reset estimate</span>
-            <strong class="yor-usage-value" data-ref="meterReset"></strong>
-          </span>
-        </button>
-        <div class="yor-card yor-hidden" data-ref="card">
-          <div class="yor-head">
-            <div class="yor-title">
-              <div class="yor-brand">
-                <strong>Yor Token Usage</strong>
-                <span class="yor-status" data-ref="status"></span>
-              </div>
-              <span class="yor-meta" data-ref="meta"></span>
-              <div class="yor-quickline">
-                <strong data-ref="quickLength"></strong>
-                <span data-ref="quickCost"></span>
-              </div>
-            </div>
-            <button class="yor-button yor-icon-button" data-action="toggle" data-ref="toggleButton" title="Open details">Open</button>
-          </div>
-          <div class="yor-body yor-hidden" data-ref="body">
-            <div class="yor-kpis">
-              <div class="yor-stat">
-                <span class="yor-stat-label">Draft</span>
-                <span class="yor-stat-value" data-ref="draftValue"></span>
-                <span class="yor-stat-note" data-ref="draftNote"></span>
-              </div>
-              <div class="yor-stat">
-                <span class="yor-stat-label">Captured ≈</span>
-                <span class="yor-stat-value" data-ref="quotaValue"></span>
-                <span class="yor-stat-note" data-ref="quotaNote"></span>
-              </div>
-              <div class="yor-stat">
-                <span class="yor-stat-label">Thread</span>
-                <span class="yor-stat-value" data-ref="threadValue"></span>
-                <span class="yor-stat-note" data-ref="threadNote"></span>
-              </div>
-              <div class="yor-stat">
-                <span class="yor-stat-label">Reset</span>
-                <span class="yor-stat-value" data-ref="resetValue"></span>
-                <span class="yor-stat-note" data-ref="resetNote"></span>
-              </div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Quota pressure</strong><span data-ref="quotaPressure"></span></div>
-              <div class="yor-meter"><span data-ref="quotaBar"></span></div>
-              <div class="yor-section-head"><strong>Context pressure</strong><span data-ref="contextPressure"></span></div>
-              <div class="yor-meter"><span data-ref="contextBar"></span></div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Live conversation</strong><span data-ref="conversationPressure"></span></div>
-              <div class="yor-rows">
-                <div class="yor-row">
-                  <span class="yor-row-label">Last user</span>
-                  <span class="yor-row-main"><strong data-ref="lastUserStatus"></strong><span data-ref="lastUserText"></span></span>
-                  <span class="yor-row-value" data-ref="lastUserTokens"></span>
-                </div>
-                <div class="yor-row">
-                  <span class="yor-row-label">Last AI</span>
-                  <span class="yor-row-main"><strong data-ref="lastAssistantStatus"></strong><span data-ref="lastAssistantText"></span></span>
-                  <span class="yor-row-value" data-ref="lastAssistantTokens"></span>
-                </div>
-                <div class="yor-row">
-                  <span class="yor-row-label">Captured</span>
-                  <span class="yor-row-main"><strong data-ref="capturedStatus"></strong><span data-ref="capturedText"></span></span>
-                  <span class="yor-row-value" data-ref="capturedTokens"></span>
-                </div>
-              </div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Current draft breakdown</strong><span data-ref="sectionsSummary"></span></div>
-              <ul class="yor-list" data-ref="sectionsList"></ul>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Measurement basis</strong><span data-ref="measurementLabel"></span></div>
-              <div class="yor-rows">
-                <div class="yor-row">
-                  <span class="yor-row-label">Confidence</span>
-                  <span class="yor-row-main"><strong data-ref="measurementConfidence"></strong><span data-ref="measurementSource"></span></span>
-                  <span class="yor-row-value" data-ref="measurementMargin"></span>
-                </div>
-              </div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Totals</strong><span data-ref="privacyLabel"></span></div>
-              <div class="yor-rows">
-                <div class="yor-row">
-                  <span class="yor-row-label">Today</span>
-                  <span class="yor-row-main"><strong data-ref="todayTokens"></strong><span data-ref="todayPrompts"></span></span>
-                  <span class="yor-row-value" data-ref="todayPromptCount"></span>
-                </div>
-                <div class="yor-row">
-                  <span class="yor-row-label">7 days</span>
-                  <span class="yor-row-main"><strong data-ref="weekTokens"></strong><span>Across all tracked sites</span></span>
-                  <span class="yor-row-value" data-ref="weekTokensValue"></span>
-                </div>
-              </div>
-            </div>
-            <div class="yor-section">
-              <div class="yor-section-head"><strong>Token reduction</strong><span data-ref="suggestionsSummary"></span></div>
-              <ul class="yor-list" data-ref="suggestionsList"></ul>
-            </div>
-            <div class="yor-actions">
-              <button class="yor-button primary" data-action="copy-summary">Copy summary</button>
-              <button class="yor-button" data-action="copy-shorter" data-ref="copyShorterButton">Copy shorter</button>
-              <button class="yor-button" data-action="replace-prompt" data-ref="replacePromptButton">Replace draft</button>
-              <button class="yor-button" data-action="open-dashboard">Dashboard</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-      this.shadow.append(template.content.cloneNode(true));
-      this.shadow.querySelectorAll("[data-ref]").forEach((element) => {
-        this.refs[element.dataset.ref] = element;
-      });
-    }
-    setVisible(value) {
-      this.visible = value;
-      const shouldShow = value && Boolean(this.state);
-      this.container.style.display = shouldShow ? "" : "none";
-      this.setHidden("root", !shouldShow);
-      if (shouldShow) this.positionBelowAnchor();
-    }
-    positionBelowAnchor() {
-      const anchor = this.callbacks.getAnchor?.();
-      const meter = this.collapsed ? this.refs.pageMeter : this.refs.card;
-      const positioner = globalThis.YorOverlayPosition;
-      if (!meter || !positioner?.applyOverlayPosition) return;
-      meter.style.visibility = anchor ? "" : "hidden";
-      if (!anchor) return;
-      const anchorRect = anchor.getBoundingClientRect?.();
-      if (!anchorRect) return;
-      // Clear the previous viewport's constraints before measuring responsive wrapping.
-      Object.assign(meter.style, { left: "12px", right: "auto", top: "0px", bottom: "auto", maxWidth: `${Math.max(0, window.innerWidth - 24)}px` });
-      if (!this.collapsed) {
-        meter.style.width = `${Math.min(430, Math.max(0, window.innerWidth - 24))}px`;
-        const availableHeight = Math.max(anchorRect.top - 20, window.innerHeight - anchorRect.bottom - 20);
-        meter.style.maxHeight = `${Math.max(0, availableHeight)}px`;
-      }
-      const meterRect = meter.getBoundingClientRect();
-      positioner.applyOverlayPosition(
-        meter,
-        anchorRect,
-        { width: window.innerWidth, height: window.innerHeight },
-        { width: meterRect.width || 280, height: meterRect.height || 44 }
-      );
-    }
-    toggleCollapsed() {
-      this.collapsed = !this.collapsed;
-      this.render(this.state);
-    }
-    handleClick(event) {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const button = target.closest("[data-action]");
-      if (!button || !this.shadow.contains(button)) return;
-      const action = button.dataset.action;
-      if (action === "toggle") {
-        this.toggleCollapsed();
-        return;
-      }
-      if (action === "copy-summary") {
-        this.callbacks.onCopySummary?.(this.state);
-        return;
-      }
-      if (action === "copy-shorter") {
-        this.callbacks.onCopyShorter();
-        return;
-      }
-      if (action === "replace-prompt") {
-        this.callbacks.onReplacePrompt();
-        return;
-      }
-      if (action === "open-dashboard") {
-        this.callbacks.onOpenDashboard?.();
-      }
-    }
-    setText(ref, value) {
-      const element = this.refs[ref];
-      if (element) element.textContent = String(value ?? "");
-    }
-    setHidden(ref, hidden) {
-      this.refs[ref]?.classList.toggle("yor-hidden", hidden);
-    }
-    setWidth(ref, value) {
-      const element = this.refs[ref];
-      if (element) element.style.width = `${value}%`;
-    }
-    setDisabled(ref, disabled) {
-      const element = this.refs[ref];
-      if (element) element.disabled = disabled;
-    }
-    strong(text) {
-      const element = document.createElement("strong");
-      element.textContent = String(text ?? "");
-      return element;
-    }
-    listItem(...children) {
-      const item = document.createElement("li");
-      for (const child of children) {
-        item.append(child instanceof Node ? child : document.createTextNode(String(child ?? "")));
-      }
-      return item;
-    }
-    renderList(ref, items) {
-      this.refs[ref]?.replaceChildren(...items);
-    }
-    render(state) {
-      if (!state) return;
-      this.state = state;
-      const messages = state.messages ?? [];
-      const lastUser = lastByRole(messages, "user");
-      const lastAssistant = lastByRole(messages, "assistant");
-      const lastUserTokens = tokensForMessage(lastUser);
-      const lastAssistantTokens = tokensForMessage(lastAssistant);
-      const percent = Number.isFinite(state.quota.percentUsed) ? state.quota.percentUsed : void 0;
-      const resetMs = state.quota.nextReset?.remainingMs;
-      const suggestions = (state.analysis.suggestions ?? []).slice(0, 3);
-      const sections = (state.analysis.sections ?? []).slice(0, 5);
-      const measurement = state.analysis?.measurement ?? {};
-      const measurementLevel = measurement.measurementLevel === "approximation" ? "Approximate" : measurement.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
-      const measurementConfidence = Number.isFinite(measurement.confidence) ? `${Math.round(measurement.confidence * 100)}%` : "Unknown";
-      const measurementMargin = Number.isFinite(measurement.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}%` : "No bound";
-      const hasDraft = Boolean(state.currentInput?.trim()) || state.analysis.inputTokens > 0;
-      const statusText = state.quota.status === "limited" ? "Limited" : state.quota.status === "warning" ? "Near limit" : percent === void 0 && state.quota.remainingTokens === void 0 ? "Budget not set" : state.quota.accuracy === "exact" ? "Provider signal" : "Estimated";
-      const quotaPrimary = state.quota.usedTokens > 0 ? `~${formatTokens(state.quota.usedTokens)}` : "No captures";
-      const quotaNote = "Local captures only; not account usage.";
-      const quotaBarPercent = percent ?? (state.sitePreferences?.tokenBudget ? clamp(state.quota.usedTokens / Math.max(1, state.sitePreferences.tokenBudget) * 100, 0, 100) : 0);
-      const contextWindow = state.contextWindow ?? resolveModelContextWindow(state.model, state.site);
-      const contextPercent = contextWindow ? clamp(state.conversation.totalTokens / Math.max(1, contextWindow) * 100, 0, 100) : void 0;
-      const lastEvent = state.lastEvent;
-      const recentLabel = lastEvent ? `${formatTokens(lastEvent.promptTokens)} in / ${formatTokens(lastEvent.outputTokens)} out` : "No captured exchanges";
-      const resetLabel = resetMs !== void 0 ? `~${formatDuration(resetMs)}` : "Unknown";
-      const lengthTokens = activeLengthTokens(state);
-      const contextLabel = contextPercent !== void 0 ? `${formatPercent(contextPercent)} context` : "context unknown";
-      this.container.style.display = this.visible ? "" : "none";
-      this.setHidden("root", !this.visible);
-      this.setHidden("pageMeter", !this.collapsed);
-      this.setHidden("card", this.collapsed);
-      this.setHidden("body", this.collapsed);
-      this.setText("meterQuotaLabel", state.sitePreferences?.tokenBudget !== void 0 ? "YOR · Budget" : "YOR · Quota");
-      this.setText("meterPercent", percent !== void 0 ? `~${formatPercent(percent)}` : "Unknown");
-      this.setText("meterTokens", messages.length || hasDraft ? formatTokens(lengthTokens) : "Not detected");
-      this.setText("meterReset", resetLabel);
-      this.refs.pageMeter.title = "YOR: visible thread + draft token estimate, not account usage. Quota/reset are unavailable unless detected or configured. Open details.";
-      this.setText("status", statusText);
-      this.setText("meta", `${SITE_LABELS[state.site] ?? state.site} \u00b7 ${state.model || "Unknown model"} \u00b7 ${contextLabel}`);
-      this.setText("quickLength", `Visible thread + draft: ~${formatInteger(lengthTokens)} tokens`);
-      this.setText("quickCost", "Provider credits and account usage unavailable");
-      this.setText("toggleButton", this.collapsed ? "Open" : "Hide");
-      if (this.refs.toggleButton) {
-        this.refs.toggleButton.title = this.collapsed ? "Open details" : "Hide details";
-      }
-      this.setText("draftValue", hasDraft ? formatTokens(state.analysis.inputTokens) : "No draft");
-      this.setText("draftNote", hasDraft ? `${formatTokens(state.analysis.outputTokensEstimate)} output est.` : "Composer is empty");
-      this.setText("quotaValue", quotaPrimary);
-      this.setText("quotaNote", quotaNote);
-      this.setText("threadValue", formatTokens(state.conversation.totalTokens));
-      this.setText("threadNote", `${messages.length} messages detected`);
-      this.setText("resetValue", resetLabel);
-      this.setText("resetNote", state.quota.nextReset?.explanation ?? "Provider reset unavailable");
-      this.setText("quotaPressure", percent !== void 0 ? formatPercent(percent) : "No percent");
-      this.setWidth("quotaBar", Math.min(100, Math.max(quotaBarPercent, quotaBarPercent > 0 ? 4 : 0)));
-      this.setText("contextPressure", contextPercent !== void 0 ? `${formatPercent(contextPercent)} of ${formatTokens(contextWindow)}` : "Unknown");
-      this.setWidth("contextBar", Math.min(100, Math.max(contextPercent ?? 0, contextPercent ? 4 : 0)));
-      this.setText("conversationPressure", `${formatTokens(state.conversation.promptTokens)} user / ${formatTokens(state.conversation.outputTokens)} assistant`);
-      this.setText("lastUserStatus", lastUser ? "Detected" : "Missing");
-      this.setText("lastUserText", lastUser ? truncate(lastUser.text, 180) : "No user message found in the visible thread.");
-      this.setText("lastUserTokens", formatTokens(lastUserTokens));
-      this.setText("lastAssistantStatus", lastAssistant ? "Detected" : "Missing");
-      this.setText("lastAssistantText", lastAssistant ? truncate(lastAssistant.text, 180) : "No assistant message found in the visible thread.");
-      this.setText("lastAssistantTokens", formatTokens(lastAssistantTokens));
-      this.setText("capturedStatus", lastEvent ? formatShortTime(lastEvent.timestamp) : "Not yet");
-      this.setText("capturedText", recentLabel);
-      this.setText("capturedTokens", lastEvent ? formatTokens(lastEvent.totalTokens) : "\u2014");
-      this.setText("measurementLabel", measurementLevel);
-      this.setText("measurementConfidence", measurementConfidence);
-      this.setText("measurementSource", measurement.source ?? "Source metadata unavailable");
-      this.setText("measurementMargin", measurementMargin);
-      this.setText("sectionsSummary", hasDraft ? `${sections.length} sections` : "No draft");
-      this.renderList("sectionsList", hasDraft && sections.length ? sections.map((section) => this.listItem(
-        this.strong(section.type),
-        ` \u00b7 ${formatTokens(section.tokens)} \u00b7 ${truncate(section.label, 90)}`
-      )) : [this.listItem("No draft sections to analyze right now.")]);
-      this.setText("privacyLabel", state.privacyLabel);
-      this.setText("todayTokens", `${formatTokens(state.summary?.tokensToday ?? 0)} tokens`);
-      this.setText("todayPrompts", `${state.summary?.promptsToday ?? 0} captured prompts`);
-      this.setText("todayPromptCount", state.summary?.promptsToday ?? 0);
-      this.setText("weekTokens", `${formatTokens(state.summary?.tokensThisWeek ?? 0)} tokens`);
-      this.setText("weekTokensValue", formatTokens(state.summary?.tokensThisWeek ?? 0));
-      this.setText("suggestionsSummary", hasDraft ? `${state.analysis.compressionScore}% potential` : "No draft");
-      this.renderList("suggestionsList", suggestions.length ? suggestions.map((item) => {
-        const lineBreak = document.createElement("br");
-        return this.listItem(
-          this.strong(item.title),
-          ` \u00b7 save ~${formatTokens(item.estimatedSavings)}`,
-          lineBreak,
-          item.description ?? ""
-        );
-      }) : [this.listItem(hasDraft ? "No high-impact reductions found for this draft." : "No draft to optimize yet.")]);
-      this.setDisabled("copyShorterButton", !hasDraft);
-      this.setDisabled("replacePromptButton", !hasDraft);
-      this.positionBelowAnchor();
-    }
-  };
-
-  // src/content/index.ts
   var adapter = getAdapterForCurrentSite();
-  if (adapter) {
-    void init();
-  }
+  globalThis.parseQuotaHintsFromText = parseQuotaHintsFromText;
+  globalThis.predictReset = predictReset;
+  globalThis.computeQuotaStatus = computeQuotaStatus;
+  globalThis.SelectorSiteAdapter = SelectorSiteAdapter;
   async function init() {
-    const initialSnapshot = await sendRuntimeMessage({
-      type: "get-snapshot",
-      activeUrl: window.location.href
-    }).catch(() => void 0);
-    let stateCache = initialSnapshot?.state;
-    let snapshotCache = initialSnapshot;
-    let preferences = initialSnapshot?.state.preferences ?? DEFAULT_PREFERENCES;
-    let overlayEnabled = preferences.showOverlay;
-    let lastPromptFingerprint = "";
-    let latestOverlayState;
-    let pendingPrompt;
-    const overlay = new OverlayWidget({
-      getAnchor: () => adapter.getComposerSurface(),
-      onCopySummary: async (state) => {
-        const targetState = state ?? latestOverlayState;
-        if (!targetState) return;
-        await navigator.clipboard.writeText(buildOverlaySummary(targetState));
-      },
-      onCopyShorter: async () => {
-        const text = adapter.readComposerText();
-        const analysis = analyzePrompt(text);
-        await navigator.clipboard.writeText(analysis.variants.shorter || text);
-      },
-      onReplacePrompt: () => {
-        const composer2 = adapter.getComposer();
-        if (!composer2) return;
-        const text = adapter.readComposerText();
-        const analysis = analyzePrompt(text);
-        const replacement = analysis.variants.balanced || analysis.variants.shorter;
-        if ("value" in composer2) {
-          composer2.value = replacement;
-        } else {
-          composer2.textContent = replacement;
-        }
-        composer2.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: replacement }));
-      },
-      onOpenDashboard: () => {
-        window.open(chrome.runtime.getURL("dashboard/dashboard.html"), "_blank", "noopener");
-      },
-      onToggle: () => void 0
-    });
-    overlay.setVisible(overlayEnabled);
-    const repositionOverlay = () => overlay.positionBelowAnchor();
-    window.addEventListener("resize", repositionOverlay, { passive: true });
-    window.addEventListener("scroll", repositionOverlay, { capture: true, passive: true });
-    const renderOverlayState = (session, conversation, messages, snapshot = snapshotCache) => {
-      const sitePreferencesForSession = preferences.sites[adapter.site] ?? DEFAULT_PREFERENCES.sites[adapter.site];
-      const lastEvent = snapshot?.analytics?.timeline?.find((event) => event.site === adapter.site) ?? snapshot?.analytics?.timeline?.[0];
-      latestOverlayState = {
-        site: session.site,
-        model: session.model,
-        currentInput: session.currentInput,
-        analysis: session.currentEstimate,
-        quota: session.quota,
-        conversation,
-        messages,
-        summary: snapshot?.summary,
-        lastEvent,
-        sitePreferences: sitePreferencesForSession,
-        contextWindow: sitePreferencesForSession?.contextWindow ?? resolveModelContextWindow(session.model, adapter.site),
-        privacyLabel: preferences.privacyMode === "local-only" ? "Local" : "Synced prefs"
-      };
-      overlay.render(latestOverlayState);
-    };
-    const syncSession = async () => {
-      const model = adapter.getModelName() ?? stateCache?.sessions[adapter.site]?.model ?? "generic";
-      const input = adapter.readComposerText();
-      const hints = adapter.getQuotaHints();
-      const analysis = analyzePrompt(input, {
-        provider: adapter.site,
-        model,
-        adapterConfidence: hints.confidence ?? 0.5,
-        source: "visible provider composer DOM text"
-      });
-      const messages = adapter.collectMessages();
-      const conversation = estimateConversation(messages);
-      const sitePreferences = preferences.sites[adapter.site] ?? DEFAULT_PREFERENCES.sites[adapter.site];
-      if (!sitePreferences?.enabled) {
-        overlay.setVisible(false);
-        return;
+    const url = new URL(window.location.href);
+    const siteAdapter = getAdapterForUrl(url);
+    if (!siteAdapter) return;
+    const activeAdapter = siteAdapter;
+    let sitePreferences = null;
+    try {
+      if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+        const snapshot = await chrome.runtime.sendMessage({ type: "get-snapshot" });
+        sitePreferences = snapshot?.state?.preferences?.sites?.[activeAdapter.site] ?? null;
       }
-      overlay.setVisible(overlayEnabled);
-      const siteEvents = stateCache?.usageEvents.filter((event) => event.site === adapter.site && event.model === model) ?? [];
-      const quota = computeQuotaStatus({
-        events: siteEvents,
-        rule: hints.detectedRule ?? sitePreferences.resetRule,
-        tokenBudget: sitePreferences.tokenBudget,
-        quotaTier: hints.quotaTier ?? sitePreferences.quotaTierLabel,
-        explicitResetAt: hints.resetAt,
-        remainingTokensHint: hints.remainingTokens,
-        percentUsedHint: hints.percentUsed,
-        statusHint: hints.status
-      });
-      const session = {
-        site: adapter.site,
-        model,
-        threadId: adapter.getThreadId(),
-        currentInput: input,
-        currentEstimate: analysis,
-        currentThread: {
-          threadId: adapter.getThreadId(),
-          site: adapter.site,
-          model,
-          messageCount: messages.length,
-          promptTokens: conversation.promptTokens,
-          outputTokens: conversation.outputTokens,
-          totalTokens: conversation.totalTokens,
-          lastUpdated: Date.now(),
-          contextGrowth: conversation.contextGrowth
-        },
-        quota,
-        lastUpdated: Date.now(),
-        lastSeenUrl: window.location.href,
-        adapterConfidence: hints.confidence ?? 0.8
-      };
-      renderOverlayState(session, conversation, messages);
-      const response = await sendRuntimeMessage({ type: "capture-session", payload: session }).catch(() => void 0);
-      if (response?.snapshot?.state) {
-        snapshotCache = response.snapshot;
-        stateCache = response.snapshot.state;
-        preferences = response.snapshot.state.preferences ?? preferences;
-        overlayEnabled = preferences.showOverlay;
-        overlay.setVisible(overlayEnabled && preferences.sites[adapter.site]?.enabled !== false);
-        renderOverlayState(session, conversation, messages, response.snapshot);
+    } catch {
+    }
+    let collapsed = true;
+    let overlayVisible = true;
+    const onCommitExchange = (event) => {
+      if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: "commit-usage-event",
+          event
+        }).catch(() => void 0);
       }
     };
-    let syncInFlight = false;
-    let syncQueued = false;
-    let syncTimer = 0;
-    let lastSyncAt = 0;
-    const MIN_SYNC_INTERVAL_MS = 1500;
-    const MUTATION_SYNC_DELAY_MS = 1200;
-    const runScheduledSync = async () => {
-      if (syncInFlight) {
-        syncQueued = true;
-        return;
+    const stateMachine = new CaptureStateMachine(activeAdapter, onCommitExchange);
+    const container = document.createElement("div");
+    container.className = "yor-token-usage-root";
+    container.style.cssText = `
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2147483647;
+    pointer-events: none;
+    overflow: visible;
+  `;
+    const shadow = container.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = `
+    :host {
+      all: initial;
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 2147483647;
+      pointer-events: none;
+      overflow: visible;
+    }
+    * { box-sizing: border-box; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
       }
-      const now = Date.now();
-      const elapsed = now - lastSyncAt;
-      if (lastSyncAt > 0 && elapsed < MIN_SYNC_INTERVAL_MS) {
-        scheduleSync(MIN_SYNC_INTERVAL_MS - elapsed);
-        return;
-      }
-      syncInFlight = true;
-      try {
-        await syncSession();
-        lastSyncAt = Date.now();
-      } finally {
-        syncInFlight = false;
-        if (syncQueued) {
-          syncQueued = false;
-          scheduleSync(MUTATION_SYNC_DELAY_MS);
-        }
-      }
-    };
-    const scheduleSync = (delay = MUTATION_SYNC_DELAY_MS) => {
-      clearTimeout(syncTimer);
-      syncTimer = setTimeout(() => {
-        void runScheduledSync();
-      }, delay);
-    };
-    const debouncedSync = () => scheduleSync(MUTATION_SYNC_DELAY_MS);
-    const registerPendingPrompt = () => {
-      if (preferences.sites[adapter.site]?.enabled === false) return;
-      const prompt = adapter.readComposerText();
-      if (!prompt.trim()) return;
-      const fingerprint = `${prompt}:${adapter.getThreadId()}`;
-      if (fingerprint === lastPromptFingerprint) return;
-      lastPromptFingerprint = fingerprint;
-      const model = adapter.getModelName() ?? "generic";
-      const hints = adapter.getQuotaHints();
-      const analysis = analyzePrompt(prompt, {
-        provider: adapter.site,
-        model,
-        adapterConfidence: hints.confidence ?? 0.5,
-        source: "visible provider composer DOM text"
-      });
-      const messages = adapter.collectMessages();
-      pendingPrompt = {
-        id: uid("usage"),
-        prompt,
-        analysis,
-        model,
-        threadId: adapter.getThreadId(),
-        assistantIds: new Set(messages.filter((message) => message.role === "assistant").map(message => message.id)),
-        awaitingThreadAssignment: messages.length === 0 && /:(?:root|new)$/.test(adapter.getThreadId()),
-        startedAt: Date.now()
-      };
-    };
-    const finalizePendingPrompt = debounce(async () => {
-      if (!pendingPrompt) return;
-      const messages = adapter.collectMessages();
-      if (adapter.getThreadId() !== pendingPrompt.threadId) {
-        if (pendingPrompt.awaitingThreadAssignment && messages.some(message => message.role === "user" && compactWhitespace(message.text) === compactWhitespace(pendingPrompt.prompt))) {
-          pendingPrompt.threadId = adapter.getThreadId();
-          pendingPrompt.awaitingThreadAssignment = false;
-        } else {
-          pendingPrompt = void 0;
-          lastPromptFingerprint = "";
-          return;
-        }
-      }
-      if (Date.now() - pendingPrompt.startedAt > 10 * 60_000) {
-        pendingPrompt = void 0;
-        lastPromptFingerprint = "";
-        return;
-      }
-      const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text.trim() && !pendingPrompt.assistantIds.has(message.id));
-      const hints = adapter.getQuotaHints();
-      if (hints.status === "limited") {
-        const rateLimitedEvent = {
-          id: pendingPrompt.id,
-          site: adapter.site,
-          model: pendingPrompt.model,
-          threadId: pendingPrompt.threadId,
-          timestamp: Date.now(),
-          promptTokens: pendingPrompt.analysis.inputTokens,
-          outputTokens: 0,
-          totalTokens: pendingPrompt.analysis.inputTokens,
-          promptText: pendingPrompt.prompt,
-          responseText: "",
-          promptChars: pendingPrompt.prompt.length,
-          outputChars: 0,
-          status: "rate_limited",
-          accuracy: "estimated",
-          measurement: createMeasurement({
-            provider: adapter.site,
-            model: pendingPrompt.model,
-            adapterConfidence: hints.confidence ?? 0.5,
-            source: "visible provider composer DOM text; quota status signaled by provider UI"
-          }),
-          promptPreview: truncate(pendingPrompt.prompt, 140),
-          optimizerSavings: Math.round(pendingPrompt.analysis.compressionScore / 100 * pendingPrompt.analysis.inputTokens),
-          rateLimitMessage: hints.rateLimitMessage,
-          resetAt: hints.resetAt
-        };
-        const response = await sendRuntimeMessage({ type: "commit-usage-event", payload: rateLimitedEvent }).catch(() => void 0);
-        if (response?.snapshot?.state) {
-          snapshotCache = response.snapshot;
-          stateCache = response.snapshot.state;
-          preferences = response.snapshot.state.preferences ?? preferences;
-        }
-        pendingPrompt = void 0;
-        lastPromptFingerprint = "";
-        return;
-      }
-      if (!latestAssistant) return;
-      if (adapter.isGenerating()) return;
-      const assistantAnalysis = analyzePrompt(latestAssistant.text, {
-        provider: adapter.site,
-        model: pendingPrompt.model,
-        adapterConfidence: hints.confidence ?? 0.5,
-        source: "visible provider response DOM text"
-      });
-      const event = {
-        id: pendingPrompt.id,
-        site: adapter.site,
-        model: pendingPrompt.model,
-        threadId: pendingPrompt.threadId,
-        timestamp: Date.now(),
-        promptTokens: pendingPrompt.analysis.inputTokens,
-        outputTokens: assistantAnalysis.inputTokens,
-        totalTokens: pendingPrompt.analysis.inputTokens + assistantAnalysis.inputTokens,
-        promptText: pendingPrompt.prompt,
-        responseText: latestAssistant.text,
-        promptChars: pendingPrompt.prompt.length,
-        outputChars: latestAssistant.text.length,
-        status: "completed",
-        accuracy: "estimated",
-        measurement: createMeasurement({
-          provider: adapter.site,
-          model: pendingPrompt.model,
-          adapterConfidence: hints.confidence ?? 0.5,
-          source: "visible provider composer and response DOM text"
-        }),
-        promptPreview: truncate(pendingPrompt.prompt, 140),
-        optimizerSavings: Math.round(pendingPrompt.analysis.compressionScore / 100 * pendingPrompt.analysis.inputTokens),
-        rateLimitMessage: hints.rateLimitMessage,
-        resetAt: hints.resetAt
-      };
-      const response = await sendRuntimeMessage({ type: "commit-usage-event", payload: event }).catch(() => void 0);
-      if (response?.snapshot?.state) {
-        snapshotCache = response.snapshot;
-        stateCache = response.snapshot.state;
-        preferences = response.snapshot.state.preferences ?? preferences;
-      }
-      pendingPrompt = void 0;
-      lastPromptFingerprint = "";
-      await syncSession();
-    }, 1600);
-    let boundComposer;
-    let boundSendButton;
-    const isComposerEvent = (event) => {
-      const composer = adapter.getComposer();
-      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
-      const target = event.target;
-      return Boolean(composer && (target === composer || composer.contains?.(target) || path.includes(composer)));
-    };
-    const isSendControlEvent = (event) => {
-      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
-      const sendButton = adapter.getSendButton();
-      if (sendButton && (event.target === sendButton || path.includes(sendButton))) return true;
-      const target = event.target;
-      const control = target?.closest?.('button, [role="button"], input[type="submit"]');
-      if (!control) return false;
-      const label = `${control.getAttribute("aria-label") ?? ""} ${control.getAttribute("title") ?? ""} ${control.textContent ?? ""}`;
-      return control.type === "submit" || /\b(send|submit)\b/i.test(label);
-    };
-    const bindLiveControls = () => {
-      const composer = adapter.getComposer();
-      if (composer && composer !== boundComposer) {
-        boundComposer = composer;
-        composer.addEventListener("input", debouncedSync);
-        composer.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-            registerPendingPrompt();
-          }
+    }
+    .yor-usage-window {
+      position: fixed;
+      pointer-events: auto;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      color: #dedbd4;
+      background: #171719;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 8px 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      user-select: none;
+      cursor: pointer;
+      line-height: 1.3;
+    }
+    .yor-usage-window:focus-visible, .yor-card button:focus-visible {
+      outline: 2px solid #8fdcc4;
+      outline-offset: 2px;
+    }
+    .yor-meter-stat {
+      display: flex;
+      flex-direction: column;
+    }
+    .yor-meter-stat span {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: #888;
+    }
+    .yor-meter-stat strong {
+      color: #8fdcc4;
+    }
+    .yor-card {
+      position: fixed;
+      pointer-events: auto;
+      background: #171719;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 16px;
+      width: min(320px, calc(100vw - 24px));
+      max-width: calc(100vw - 24px);
+      overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      color: #dedbd4;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .yor-card.yor-open {
+      display: flex;
+    }
+    .yor-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .yor-card button {
+      background: #242426;
+      color: #dedbd4;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .yor-card button.primary {
+      background: #8fdcc4;
+      color: #101011;
+      font-weight: 600;
+    }
+  `;
+    shadow.append(style);
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = `
+    <button class="yor-usage-window" data-action="toggle" data-ref="pageMeter" title="Open Yor Token Usage details">
+      <span class="yor-meter-stat">
+        <span>Quota</span>
+        <strong data-ref="meterPercent">Unknown</strong>
+      </span>
+      <span class="yor-meter-stat">
+        <span>Tokens</span>
+        <strong data-ref="meterTokens">Not detected</strong>
+      </span>
+      <span class="yor-meter-stat">
+        <span>Reset</span>
+        <strong data-ref="meterReset">Unknown</strong>
+      </span>
+    </button>
+    <div class="yor-card" data-ref="card">
+      <div class="yor-card-head">
+        <strong>Yor Token Usage</strong>
+        <button data-action="toggle" data-ref="toggleButton">Close</button>
+      </div>
+      <div>
+        <span data-ref="quickCost">Cost proxy unavailable</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button data-ref="copyShorterButton">Copy shorter</button>
+      </div>
+    </div>
+  `;
+    shadow.append(wrapper);
+    document.documentElement.appendChild(container);
+    const pageMeter = shadow.querySelector('[data-ref="pageMeter"]');
+    const card = shadow.querySelector('[data-ref="card"]');
+    const meterTokens = shadow.querySelector('[data-ref="meterTokens"]');
+    const meterPercent = shadow.querySelector('[data-ref="meterPercent"]');
+    const meterReset = shadow.querySelector('[data-ref="meterReset"]');
+    function positionOverlay() {
+      if (!overlayVisible) return;
+      const composer = activeAdapter.findComposer();
+      if (!composer) return;
+      const anchor = composer.closest("form") || composer;
+      const anchorRect = anchor.getBoundingClientRect();
+      const viewportRect = { width: window.innerWidth, height: window.innerHeight };
+      const maxWidth = Math.max(0, window.innerWidth - 24);
+      const availableHeight = Math.max(anchorRect.top - 20, window.innerHeight - anchorRect.bottom - 20);
+      if (collapsed) {
+        pageMeter.style.display = "flex";
+        card.classList.remove("yor-open");
+        pageMeter.style.maxWidth = `${maxWidth}px`;
+        const meterRect = pageMeter.getBoundingClientRect();
+        applyOverlayPosition(pageMeter, anchorRect, viewportRect, {
+          width: meterRect.width || 250,
+          height: meterRect.height || 44
         });
-        overlay.positionBelowAnchor();
+      } else {
+        pageMeter.style.display = "none";
+        card.classList.add("yor-open");
+        card.style.maxWidth = `${maxWidth}px`;
+        card.style.width = `${Math.min(320, maxWidth)}px`;
+        card.style.maxHeight = `${Math.max(120, availableHeight)}px`;
+        const cardRect = card.getBoundingClientRect();
+        applyOverlayPosition(card, anchorRect, viewportRect, {
+          width: cardRect.width || Math.min(320, maxWidth),
+          height: cardRect.height || 140
+        });
       }
-      const sendButton = adapter.getSendButton();
-      if (sendButton && sendButton !== boundSendButton) {
-        boundSendButton = sendButton;
-        sendButton.addEventListener("click", registerPendingPrompt);
+    }
+    shadow.addEventListener("click", (event) => {
+      const target = event.target;
+      const toggleBtn = target?.closest('[data-action="toggle"]');
+      if (toggleBtn) {
+        collapsed = !collapsed;
+        positionOverlay();
+        return;
       }
-    };
-    bindLiveControls();
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey && !event.isComposing && isComposerEvent(event)) {
-        registerPendingPrompt();
+    });
+    function doUpdateObservation() {
+      const composer = activeAdapter.findComposer();
+      const draftText = composer ? activeAdapter.readComposerText(composer) : "";
+      const attachments = activeAdapter.getAttachmentDescriptors();
+      const visibleMessages = activeAdapter.collectVisibleMessages();
+      let quota = activeAdapter.getQuotaSignals();
+      const modelInfo = activeAdapter.detectModel();
+      const threadId = activeAdapter.getConversationId(new URL(window.location.href));
+      const alertEl = document.querySelector('[role="alert"], .alert, [data-testid="rate-limit-banner"]');
+      if (alertEl && alertEl.textContent) {
+        const alertQuota = parseQuotaHintsFromText(alertEl.textContent);
+        if (alertQuota.status === "limited" || alertQuota.resetAt) {
+          quota = { ...quota, ...alertQuota };
+        }
       }
-    }, true);
+      const hasContent = draftText.trim().length > 0 || visibleMessages.length > 0;
+      if (!hasContent) {
+        meterTokens.textContent = "Not detected";
+        meterReset.textContent = "Unknown";
+        meterPercent.textContent = "Unknown";
+      } else {
+        const draftBreakdown2 = getDraftTokenBreakdown(draftText, attachments);
+        const visibleTokens2 = visibleMessages.reduce((sum, m) => sum + Math.ceil(m.text.length / 4), 0);
+        const totalTokens = visibleTokens2 + draftBreakdown2.total;
+        meterTokens.textContent = `${totalTokens > 0 ? totalTokens : draftBreakdown2.total}`;
+        meterPercent.textContent = quota?.percentUsed !== void 0 ? `${quota.percentUsed}%` : "Unknown";
+        if (quota?.resetAt && quota.resetAt > Date.now()) {
+          meterReset.textContent = formatRemainingDuration(quota.resetAt, Date.now());
+        } else if (sitePreferences?.resetRule && !sitePreferences.resetRule.inferred) {
+          const pred = predictReset({ now: Date.now(), rule: sitePreferences.resetRule });
+          if (pred.resetAt && pred.resetAt > Date.now()) {
+            meterReset.textContent = formatRemainingDuration(pred.resetAt, Date.now());
+          } else {
+            meterReset.textContent = "Unknown";
+          }
+        } else {
+          meterReset.textContent = "Unknown";
+        }
+      }
+      positionOverlay();
+      const draftBreakdown = getDraftTokenBreakdown(draftText, attachments);
+      const visibleTokens = visibleMessages.reduce((sum, m) => sum + Math.ceil(m.text.length / 4), 0);
+      const draftAnalysis = {
+        inputTokens: draftBreakdown.total,
+        sections: draftBreakdown.sections,
+        measurement: draftBreakdown.measurement,
+        largePaste: draftText.length > 5e3
+      };
+      const contextAccounting = {
+        visibleThreadTokens: visibleTokens,
+        visibleMessageCount: visibleMessages.length,
+        estimatedCurrentContextTokens: visibleTokens + draftBreakdown.total,
+        contextPressureTier: "low",
+        measurement: getMeasurement(activeAdapter.site, modelInfo.label || "unknown")
+      };
+      if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: "submit-tab-observation",
+          site: activeAdapter.site,
+          threadId,
+          model: modelInfo.label || "unknown",
+          draftText,
+          draftAnalysis,
+          contextAccounting,
+          quotaSignal: quota
+        }).catch(() => void 0);
+      }
+    }
+    const updateObservation = debounce(doUpdateObservation, 100);
+    doUpdateObservation();
+    document.addEventListener("input", (event) => {
+      const composer = activeAdapter.findComposer();
+      if (composer && (composer === event.target || composer.contains(event.target))) {
+        const text = activeAdapter.readComposerText(composer);
+        stateMachine.onUserTyping(text);
+        updateObservation();
+      }
+    });
     document.addEventListener("click", (event) => {
-      if (isSendControlEvent(event)) {
-        registerPendingPrompt();
+      const target = event.target;
+      const sendBtn = activeAdapter.findSendControl();
+      if (sendBtn && (target === sendBtn || sendBtn.contains(target))) {
+        const composer = activeAdapter.findComposer();
+        const text = composer ? activeAdapter.readComposerText(composer) : "";
+        const model = activeAdapter.detectModel().label || "unknown";
+        const threadId = activeAdapter.getConversationId(new URL(window.location.href));
+        const messages = activeAdapter.collectVisibleMessages();
+        stateMachine.onUserSubmit(text, model, threadId, messages);
+        updateObservation();
       }
-    }, true);
-    document.addEventListener("submit", () => {
-      registerPendingPrompt();
     }, true);
     const observer = new MutationObserver(() => {
-      bindLiveControls();
-      debouncedSync();
-      finalizePendingPrompt();
+      const visibleMessages = activeAdapter.collectVisibleMessages();
+      const quota = activeAdapter.getQuotaSignals();
+      stateMachine.onDomUpdate(document.body, new URL(window.location.href), visibleMessages, quota);
+      updateObservation();
     });
-    // SPA navigation may replace <main>; observing that old node loses all future turns.
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ["aria-label", "aria-busy", "data-testid"]
-    });
-    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (message?.type === "toggle-overlay") {
-        overlayEnabled = typeof message.value === "boolean" ? message.value : !overlayEnabled;
-        overlay.setVisible(overlayEnabled);
-        sendResponse({ ok: true, visible: overlayEnabled });
-      }
-      if (message?.type === "refresh-session") {
-        void runScheduledSync();
-        sendResponse({ ok: true });
-      }
-      return true;
-    });
-    setInterval(() => {
-      bindLiveControls();
-      scheduleSync(0);
-    }, 15e3);
-    await runScheduledSync();
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", () => positionOverlay());
+    window.addEventListener("scroll", () => positionOverlay(), true);
+    if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+        if (msg?.type === "toggle-overlay") {
+          overlayVisible = msg.value !== void 0 ? msg.value : !overlayVisible;
+          container.style.display = overlayVisible ? "" : "none";
+          sendResponse({ ok: true, visible: overlayVisible });
+        }
+      });
+    }
+    updateObservation();
+  }
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => void init());
+    } else {
+      void init();
+    }
   }
 })();

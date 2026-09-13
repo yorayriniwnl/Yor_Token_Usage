@@ -59,7 +59,7 @@ async function requeueOrDeadLetter(id: string, payload: UsageBatchJob, error: un
     const timer = setTimeout(async () => {
       activeRetryTimers.delete(timer);
       try {
-        await redis.xadd(STREAM, "*", "payload", JSON.stringify({ ...payload, attempts }));
+        await redis.xadd(STREAM, "MAXLEN", "~", "100000", "*", "payload", JSON.stringify({ ...payload, attempts }));
         await redis.xack(STREAM, GROUP, id);
       } catch (err) {
         console.error({ id, error: err }, "failed to requeue retry job");
@@ -71,12 +71,12 @@ async function requeueOrDeadLetter(id: string, payload: UsageBatchJob, error: un
 }
 
 async function deadLetter(id: string, payload: UsageBatchJob, error: unknown): Promise<void> {
-  await redis.xadd(DEAD, "*", "payload", JSON.stringify(payload), "error", String(error));
+  await redis.xadd(DEAD, "MAXLEN", "~", "100000", "*", "payload", JSON.stringify(payload), "error", String(error));
   await redis.xack(STREAM, GROUP, id);
 }
 
 async function deadLetterRaw(id: string, fields: string[], error: unknown): Promise<void> {
-  await redis.xadd(DEAD, "*", "payload", fieldsToObject(fields).payload ?? "{}", "error", String(error));
+  await redis.xadd(DEAD, "MAXLEN", "~", "100000", "*", "payload", fieldsToObject(fields).payload ?? "{}", "error", String(error));
   await redis.xack(STREAM, GROUP, id);
 }
 

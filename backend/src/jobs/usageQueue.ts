@@ -26,7 +26,7 @@ local current_count = tonumber(redis.call("GET", KEYS[3]) or "0")
 local event_count = tonumber(ARGV[3])
 local daily_limit = tonumber(ARGV[4])
 if current_count + event_count > daily_limit then return -1 end
-local stream_id = redis.call("XADD", KEYS[2], "*", "payload", ARGV[1])
+local stream_id = redis.call("XADD", KEYS[2], "MAXLEN", "~", 100000, "*", "payload", ARGV[1])
 redis.call("SET", KEYS[1], stream_id, "EX", ARGV[2])
 redis.call("INCRBY", KEYS[3], event_count)
 redis.call("EXPIRE", KEYS[3], ARGV[5])
