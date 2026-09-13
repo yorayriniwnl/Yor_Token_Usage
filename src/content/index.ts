@@ -161,11 +161,15 @@ async function init() {
   let overlayVisible = true;
 
   const onCommitExchange = (event: CommittedExchange) => {
-    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({
-        type: "commit-usage-event",
-        event
-      }).catch(() => void 0);
+    try {
+      if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: "commit-usage-event",
+          event
+        }).catch(() => void 0);
+      }
+    } catch {
+      // Ignore extension context invalidated
     }
   };
 
@@ -428,17 +432,21 @@ async function init() {
       measurement: getMeasurement(activeAdapter.site, modelInfo.label || "unknown")
     };
 
-    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({
-        type: "submit-tab-observation",
-        site: activeAdapter.site,
-        threadId,
-        model: modelInfo.label || "unknown",
-        draftText,
-        draftAnalysis,
-        contextAccounting,
-        quotaSignal: quota
-      }).catch(() => void 0);
+    try {
+      if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: "submit-tab-observation",
+          site: activeAdapter.site,
+          threadId,
+          model: modelInfo.label || "unknown",
+          draftText,
+          draftAnalysis,
+          contextAccounting,
+          quotaSignal: quota
+        }).catch(() => void 0);
+      }
+    } catch {
+      // Ignore extension context invalidated
     }
   }
 
