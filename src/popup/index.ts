@@ -1,107 +1,421 @@
-export {};
-
-function formatNumber(num: number): string {
-  return new Intl.NumberFormat().format(num);
+// @ts-nocheck
+// src/lib/constants.ts
+var SITE_LABELS = {
+  chatgpt: "ChatGPT",
+  claude: "Claude",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+  grok: "Grok",
+  generic: "Other"
+};
+function makeResetRule(kind, description, intervalMinutes) {
+  return {
+    kind,
+    intervalMinutes,
+    inferred: true,
+    description
+  };
 }
-
-async function getActiveTabUrl(): Promise<string | undefined> {
-  if (typeof chrome !== "undefined" && chrome.tabs?.query) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tab?.url;
-  }
-  return undefined;
-}
-
-async function loadSnapshot() {
-  const activeUrl = await getActiveTabUrl();
-  return new Promise<any>((resolve) => {
-    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: "get-snapshot", activeUrl }, (response) => {
-        resolve(response);
-      });
-    } else {
-      resolve(null);
+function makeSiteSettings(site) {
+  const defaults = {
+    chatgpt: {
+      enabled: true,
+      resetRule: makeResetRule("rolling", "Inferred rolling window. Adjust in settings if your plan differs.", 180),
+      quotaTierLabel: "Auto-detect"
+    },
+    claude: {
+      enabled: true,
+      resetRule: {
+        kind: "daily",
+        anchorLocalTime: "00:00",
+        inferred: true,
+        description: "Inferred daily reset. Adjust if needed."
+      },
+      quotaTierLabel: "Auto-detect"
+    },
+    gemini: {
+      enabled: true,
+      resetRule: {
+        kind: "daily",
+        anchorLocalTime: "00:00",
+        inferred: true,
+        description: "Inferred daily reset. Adjust if needed."
+      },
+      quotaTierLabel: "Auto-detect"
+    },
+    perplexity: {
+      enabled: true,
+      resetRule: {
+        kind: "daily",
+        anchorLocalTime: "00:00",
+        inferred: true,
+        description: "Inferred daily reset. Adjust if needed."
+      },
+      quotaTierLabel: "Auto-detect"
+    },
+    grok: {
+      enabled: true,
+      resetRule: {
+        kind: "daily",
+        anchorLocalTime: "00:00",
+        inferred: true,
+        description: "Inferred daily reset. Adjust if needed."
+      },
+      quotaTierLabel: "Auto-detect"
+    },
+    generic: {
+      enabled: false,
+      resetRule: {
+        kind: "unknown",
+        inferred: true,
+        description: "Set a custom reset rule once you know the platform limits."
+      },
+      quotaTierLabel: "Custom"
     }
+  };
+  return structuredClone(defaults[site]);
+}
+var DEFAULT_PREFERENCES = {
+  theme: "system",
+  compactMode: false,
+  showOverlay: true,
+  privacyMode: "local-only",
+  alerts: {
+    quotaWarningPercent: 85,
+    largePromptTokens: 1800,
+    anomalyMultiplier: 2.1,
+    desktopNotifications: true,
+    badgeMode: "percent"
+  },
+  sites: {
+    chatgpt: makeSiteSettings("chatgpt"),
+    claude: makeSiteSettings("claude"),
+    gemini: makeSiteSettings("gemini"),
+    perplexity: makeSiteSettings("perplexity"),
+    grok: makeSiteSettings("grok"),
+    generic: makeSiteSettings("generic")
+  }
+};
+
+// src/lib/utils.ts
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+function round(value, digits = 0) {
+  const precision = 10 ** digits;
+  return Math.round(value * precision) / precision;
+}
+
+// src/lib/format.ts
+function formatTokens(tokens) {
+  if (tokens === void 0 || Number.isNaN(tokens)) return "\u2014";
+  const rounded = Math.round(tokens);
+  if (rounded >= 999500) return `${round(tokens / 1e6, 2)}M`;
+  if (rounded >= 995) return `${round(tokens / 1e3, 1)}K`;
+  return `${Math.round(tokens)}`;
+}
+function formatPercent(value) {
+  if (value === void 0 || Number.isNaN(value)) return "\u2014";
+  const clamped = clamp(value, 0, 100);
+  if (clamped > 99 && clamped < 100) return "99.9%";
+  return `${round(clamped, clamped > 10 ? 0 : 1)}%`;
+}
+function formatCurrency(value) {
+  if (value === void 0 || Number.isNaN(value)) return "\u2014";
+  return new Intl.NumberFormat(void 0, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: value < 1 ? 4 : 2
+  }).format(value);
+}
+function formatClock(timestamp) {
+  if (!timestamp) return "Unknown";
+  return new Intl.DateTimeFormat(void 0, {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(timestamp));
+}
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+// src/lib/runtime.ts
+async function sendRuntimeMessage(message) {
+  return chrome.runtime.sendMessage(message);
+}
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+async function getActiveUrl() {
+  const tab = await getActiveTab();
+  return tab?.url;
+}
+async function sendToActiveTab(message) {
+  const tab = await getActiveTab();
+  if (!tab?.id) return void 0;
+  try {
+    return await chrome.tabs.sendMessage(tab.id, message);
+  } catch {
+    return void 0;
+  }
+}
+
+// src/ui/charts.ts
+function renderSparkline(container, values, labels = []) {
+  if (!values.length) {
+    container.innerHTML = '<div class="empty-chart">No usage data yet.</div>';
+    return;
+  }
+  const width = 320;
+  const height = 120;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = Math.max(1, max - min);
+  const points = values.map((value, index) => {
+    const x = index / Math.max(1, values.length - 1) * width;
+    const y = height - (value - min) / range * (height - 14) - 7;
+    return `${x},${y}`;
   });
+  const last = values.at(-1) ?? 0;
+  container.innerHTML = `
+    <div class="chart-meta"><strong>${formatTokens(last)}</strong><span>latest</span></div>
+    <svg viewBox="0 0 ${width} ${height}" class="sparkline" role="img" aria-label="Usage sparkline">
+      <defs>
+        <linearGradient id="spark-fill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="rgba(143, 220, 196, 0.30)"></stop>
+          <stop offset="100%" stop-color="rgba(143, 220, 196, 0)"></stop>
+        </linearGradient>
+      </defs>
+      <polyline fill="none" stroke="rgba(143,220,196,0.95)" stroke-width="3" points="${points.join(" ")}"></polyline>
+      <polygon fill="url(#spark-fill)" points="0,${height} ${points.join(" ")} ${width},${height}"></polygon>
+      ${values.map((value, index) => {
+    const [x, y] = points[index].split(",");
+    const label = labels[index] ?? `${index + 1}`;
+    return `<circle cx="${x}" cy="${y}" r="3.4" fill="rgba(255,255,255,0.96)"><title>${escapeHtml(label)}: ${formatTokens(value)} tokens</title></circle>`;
+  }).join("")}
+    </svg>
+  `;
 }
-
-async function render() {
-  const data = await loadSnapshot();
-  if (!data) return;
-
-  const usageCard = document.getElementById("usage-card");
-  if (usageCard) {
-    const session = data.currentSession;
-    const tokensToday = data.summary?.tokensToday ?? 0;
-    const promptsToday = data.summary?.promptsToday ?? 0;
-    const draftTokens = session?.draftAnalysis?.inputTokens ?? 0;
-    const model = session?.model || "No active session";
-    const quota = session?.quotaSignal;
-    const quotaPercent = quota?.percentUsed !== undefined ? `${quota.percentUsed}%` : "Unknown";
-
-    usageCard.innerHTML = `
-      <div class="card-metric">
-        <span class="label">Today's Tokens</span>
-        <strong class="value">${formatNumber(tokensToday)}</strong>
-        <span class="subtext">${promptsToday} turn${promptsToday === 1 ? "" : "s"} completed</span>
-      </div>
-      <div class="card-meta">
-        <div><span>Active Model:</span> <strong>${model}</strong></div>
-        <div><span>Composer Draft:</span> <strong>${draftTokens} tokens</strong></div>
-        <div><span>Observed Quota:</span> <strong>${quotaPercent}</strong></div>
-      </div>
-    `;
+function renderBarList(container, items, formatter = formatTokens) {
+  if (!items.length) {
+    container.innerHTML = '<div class="empty-chart">Nothing captured yet.</div>';
+    return;
   }
-
-  const modelBreakdown = document.getElementById("model-breakdown");
-  if (modelBreakdown) {
-    const events = data.state?.usageEvents || [];
-    const modelCounts: Record<string, number> = {};
-    for (const e of events) {
-      modelCounts[e.model] = (modelCounts[e.model] || 0) + e.totalTokens;
-    }
-    const sorted = Object.entries(modelCounts).sort((a, b) => b[1] - a[1]).slice(0, 4);
-
-    if (sorted.length === 0) {
-      modelBreakdown.innerHTML = `<p class="muted">No usage recorded yet.</p>`;
-    } else {
-      modelBreakdown.innerHTML = sorted
-        .map(
-          ([model, tokens]) => `
-          <div class="split-row">
-            <span>${model}</span>
-            <strong>${formatNumber(tokens)}</strong>
+  const max = Math.max(...items.map((item) => Number.isFinite(item.value) ? item.value : 0), 1);
+  container.innerHTML = items.map(
+    (item) => {
+      const value = Number.isFinite(item.value) ? item.value : 0;
+      const width = Math.max(5, value / max * 100);
+      return `
+        <div class="bar-row">
+          <div class="bar-copy">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span>${escapeHtml(item.meta ?? formatter(value))}</span>
           </div>
-        `
-        )
-        .join("");
+          <div class="bar-track"><span style="width:${width}%"></span></div>
+        </div>
+      `;
     }
-  }
-
-  const changeSummary = document.getElementById("change-summary");
-  if (changeSummary) {
-    const cost = data.summary?.costThisWeek ?? 0;
-    changeSummary.textContent = `Estimated API-equivalent cost this week: $${cost.toFixed(4)}. No raw prompts or responses are sent to the cloud.`;
-  }
+  ).join("");
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  void render();
+// src/popup/index.ts
+var usageCard = document.querySelector("#usage-card");
+var trendChart = document.querySelector("#trend-chart");
+var modelBreakdown = document.querySelector("#model-breakdown");
+var suggestions = document.querySelector("#suggestions");
+var changeSummary = document.querySelector("#change-summary");
+function applyPresentation(preferences) {
+  const theme = preferences.theme === "system" ? (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark") : preferences.theme;
+  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+  document.documentElement.classList.toggle("compact", preferences.compactMode === true);
+}
+async function runButtonAction(button, task, doneLabel = "Done") {
+  const originalLabel = button.textContent;
+  button.classList.add("is-busy");
+  try {
+    await task();
+    button.classList.remove("is-busy");
+    button.classList.add("is-confirmed");
+    button.textContent = doneLabel;
+  } catch {
+    button.classList.remove("is-busy");
+    button.textContent = "Failed";
+  } finally {
+    setTimeout(() => {
+      button.classList.remove("is-confirmed", "is-busy");
+      button.textContent = originalLabel;
+    }, 900);
+  }
+}
+function renderLoading() {
+  usageCard.innerHTML = `
+    <div class="hero-copy">
+      <div class="skeleton-stack">
+        <span class="skeleton-line w-lg"></span>
+        <span class="skeleton-line w-md"></span>
+      </div>
+      <span class="skeleton-pill"></span>
+    </div>
+    <div class="metric-grid">
+      ${Array.from({ length: 4 }, () => '<div class="metric"><span class="skeleton-line w-sm"></span><strong class="skeleton-line w-md"></strong></div>').join("")}
+    </div>
+  `;
+  trendChart.innerHTML = '<div class="skeleton-chart"></div>';
+  modelBreakdown.innerHTML = '<div class="skeleton-chart short"></div>';
+  suggestions.innerHTML = '<div class="skeleton-chart short"></div>';
+  changeSummary.innerHTML = '<span class="skeleton-line w-lg"></span>';
+}
+function describeRuntimeError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/chrome|sendMessage|extension context|cannot read properties of undefined|is not a function/i.test(message)) {
+    return "The extension background service is unavailable. Reload Yor and reopen this view.";
+  }
+  return message.slice(0, 240) || "The extension could not load this view.";
+}
+function renderError(message) {
+  usageCard.innerHTML = `
+    <div class="hero-copy">
+      <div>
+        <h2>Could not load usage</h2>
+        <p>${escapeHtml(message)}</p>
+      </div>
+      <span class="status-chip">Offline</span>
+    </div>
+  `;
+  trendChart.innerHTML = '<div class="empty-chart">Refresh the active AI tab, then reopen this popup.</div>';
+  modelBreakdown.innerHTML = '<div class="empty-chart">No model data available.</div>';
+  suggestions.innerHTML = '<div class="empty-chart">No prompt suggestions available.</div>';
+  changeSummary.textContent = "The extension runtime did not return a snapshot.";
+}
+function buildSessionSummary(session, snapshot) {
+  if (!session || !snapshot) {
+    return "Open ChatGPT, Claude, Gemini, Perplexity, or Grok to start capturing live token usage.";
+  }
+  const previous = snapshot.analytics.timeline[0];
+  if (!previous) {
+    return `Watching ${SITE_LABELS[session.site]} with ${session.model}. Your first captured exchange will appear here.`;
+  }
+  const delta = session.currentEstimate.inputTokens - (previous.promptTokens ?? previous.totalTokens ?? 0);
+  const direction = delta >= 0 ? "larger" : "smaller";
+  return `The active prompt is ${formatTokens(Math.abs(delta))} tokens ${direction} than the previous captured exchange, and the current thread is around ${formatTokens(session.currentThread?.totalTokens)} tokens.`;
+}
+function renderHero(snapshot) {
+  const session = snapshot.currentSession;
+  const percent = Number.isFinite(session?.quota.percentUsed) ? session.quota.percentUsed : 0;
+  const statusLabel = session?.quota.status === "limited" ? "Limit reached" : session?.quota.status === "warning" ? "Near limit" : session?.quota.accuracy === "exact" ? "Provider signal" : "Estimated";
+  const measurement = session?.currentEstimate?.measurement;
+  const measurementLabel = measurement?.measurementLevel === "approximation" ? "Approximate" : measurement?.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
+  const measurementConfidence = Number.isFinite(measurement?.confidence) ? `${Math.round(measurement.confidence * 100)}% confidence` : "confidence unknown";
+  const measurementMargin = Number.isFinite(measurement?.errorMarginPercent) ? `±${Math.round(measurement.errorMarginPercent)}% bound` : "no error bound";
+  usageCard.innerHTML = `
+    <div class="hero-copy">
+      <div>
+        <h2>${escapeHtml(session ? `${SITE_LABELS[session.site]} \u2022 ${session.model}` : "No active AI tab")}</h2>
+        <p>${escapeHtml(session ? `Reset ${session.quota.nextReset?.localLabel ?? "unknown"} \u2022 last update ${formatClock(session.lastUpdated)}` : "Pin the popup while you work to monitor usage in real time.")}</p>
+        ${session ? `<p class="measurement-note" title="${escapeHtml(measurement?.note ?? "Token provenance is unavailable.")}">${escapeHtml(`${measurementLabel} \u2022 ${measurementConfidence} \u2022 ${measurementMargin}`)}</p>` : ""}
+      </div>
+      <span class="status-chip">${escapeHtml(statusLabel)}</span>
+    </div>
+    <div class="metric-grid">
+      <div class="metric"><strong>${formatTokens(snapshot.summary.tokensToday)}</strong><span>today</span></div>
+      <div class="metric"><strong>${formatTokens(snapshot.summary.tokensThisWeek)}</strong><span>7-day total</span></div>
+      <div class="metric"><strong>${session ? formatTokens(session.currentEstimate.inputTokens) : "\u2014"}</strong><span>current prompt</span></div>
+      <div class="metric"><strong>${formatCurrency(snapshot.summary.costThisWeek)}</strong><span>est. cost</span></div>
+    </div>
+    <div class="meter-track"><span style="width:${Math.max(4, Math.min(percent, 100))}%"></span></div>
+    <div class="metric-grid secondary">
+      <div class="metric"><strong>${session ? formatPercent(session.quota.percentUsed) : "\u2014"}</strong><span>quota used</span></div>
+      <div class="metric"><strong>${session ? formatTokens(session.quota.remainingTokens) : "\u2014"}</strong><span>remaining</span></div>
+      <div class="metric"><strong>${session ? formatTokens(session.currentThread?.totalTokens) : "\u2014"}</strong><span>thread total</span></div>
+      <div class="metric"><strong>${session ? `${session.currentEstimate.compressionScore}%` : "\u2014"}</strong><span>save potential</span></div>
+    </div>
+  `;
+}
+async function render() {
+  let snapshot;
+  try {
+    const activeUrl = await getActiveUrl();
+    snapshot = await sendRuntimeMessage({ type: "get-snapshot", activeUrl });
+  } catch (error) {
+    renderError(describeRuntimeError(error));
+    return;
+  }
+  if (!snapshot?.analytics || !snapshot?.summary) {
+    renderError("Snapshot data was missing or incomplete.");
+    return;
+  }
+  applyPresentation(snapshot.state?.preferences ?? DEFAULT_PREFERENCES);
+  renderHero(snapshot);
+  renderSparkline(
+    trendChart,
+    (snapshot.analytics.byDay || []).map((day) => day.tokens),
+    (snapshot.analytics.byDay || []).map((day) => day.date)
+  );
+  renderBarList(
+    modelBreakdown,
+    (snapshot.analytics.byModel || []).slice(0, 4).map((item) => ({ label: item.label, value: item.tokens, meta: `${formatTokens(item.tokens)} \u2022 ${item.prompts} prompts` }))
+  );
+  const currentSuggestions = snapshot.currentSession?.currentEstimate.suggestions ?? [];
+  suggestions.innerHTML = currentSuggestions.length ? currentSuggestions.slice(0, 3).map(
+    (item) => `
+            <div class="suggestion-card">
+              <strong>${escapeHtml(item.title)}</strong>
+              <p>${escapeHtml(item.description)} Save about ${formatTokens(item.estimatedSavings)} tokens.</p>
+            </div>
+          `
+  ).join("") : '<div class="empty-chart">No optimization warnings right now.</div>';
+  changeSummary.textContent = buildSessionSummary(snapshot.currentSession, snapshot);
+  document.querySelector("#copy-summary-btn").onclick = async (event) => {
+    const session = snapshot.currentSession;
+    await runButtonAction(event.currentTarget, async () => {
+      const summary = session ? `${SITE_LABELS[session.site]} \u2022 ${session.model}
+Current prompt: ${formatTokens(session.currentEstimate.inputTokens)}
+Thread total: ${formatTokens(session.currentThread?.totalTokens)}
+Quota used: ${formatPercent(session.quota.percentUsed)}
+Reset: ${session.quota.nextReset?.localLabel ?? "unknown"}` : "No active AI session yet.";
+      await navigator.clipboard.writeText(summary);
+    }, "Copied");
+  };
+  document.querySelector("#copy-shorter-btn").onclick = async (event) => {
+    await runButtonAction(event.currentTarget, async () => {
+      const shorter = snapshot.currentSession?.currentEstimate.variants.shorter;
+      await navigator.clipboard.writeText(shorter || snapshot.currentSession?.currentInput || "");
+    }, "Copied");
+  };
+  document.querySelector("#dashboard-btn").onclick = async (event) => {
+    await runButtonAction(event.currentTarget, async () => {
+      await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard/dashboard.html") });
+    }, "Opened");
+  };
+  document.querySelector("#settings-btn").onclick = async (event) => {
+    await runButtonAction(event.currentTarget, async () => {
+      await chrome.runtime.openOptionsPage();
+    }, "Opened");
+  };
+  document.querySelector("#toggle-overlay-btn").onclick = async (event) => {
+    await runButtonAction(event.currentTarget, async () => {
+      const response = await sendToActiveTab({ type: "toggle-overlay" });
+      if (!response?.ok) throw new Error("No supported AI tab is available.");
+    }, "Toggled");
+  };
+  document.querySelector("#refresh-btn").onclick = async (event) => {
+    await runButtonAction(event.currentTarget, async () => {
+      const response = await sendToActiveTab({ type: "refresh-session" });
+      if (!response?.ok) throw new Error("No supported AI tab is available.");
+      await render();
+    }, "Updated");
+  };
+}
+renderLoading();
+void render();
 
-  document.getElementById("refresh-btn")?.addEventListener("click", () => void render());
-  document.getElementById("settings-btn")?.addEventListener("click", () => {
-    if (typeof chrome !== "undefined" && chrome.runtime?.openOptionsPage) {
-      chrome.runtime.openOptionsPage();
-    }
-  });
-  document.getElementById("dashboard-btn")?.addEventListener("click", () => {
-    if (typeof chrome !== "undefined" && chrome.tabs?.create) {
-      chrome.tabs.create({ url: chrome.runtime.getURL("dashboard/dashboard.html") });
-    }
-  });
-  document.getElementById("toggle-overlay-btn")?.addEventListener("click", () => {
-    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: "toggle-overlay" }, () => void render());
-    }
-  });
-});
+export {};
