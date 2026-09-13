@@ -18,7 +18,10 @@ test("resolves model profile by exact id, matcher, and provider fallback", () =>
   assert.equal(deepseek.outputCostPer1M, 0.28);
 
   const unknownChatgpt = resolveModelProfile("custom-unknown-model", "chatgpt");
-  assert.equal(unknownChatgpt.id, "gpt-4o");
+  assert.equal(unknownChatgpt.id, "custom-unknown");
+  assert.equal(unknownChatgpt.quotaTier, "Unknown");
+  assert.equal(unknownChatgpt.inputCostPer1M, 0);
+  assert.equal(unknownChatgpt.outputCostPer1M, 0);
 });
 
 test("calculates accurate USD costs for prompt and output tokens", () => {

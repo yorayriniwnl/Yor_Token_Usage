@@ -132,7 +132,9 @@ export async function upsertDevice(request: FastifyRequest) {
 export async function verifyDeviceNotRevoked(request: FastifyRequest): Promise<void> {
   if (!request.auth) throw new Error("missing auth");
   const installId = request.headers["x-install-id"];
-  if (typeof installId !== "string" || !installId.trim()) return;
+  if (typeof installId !== "string" || !installId.trim()) {
+    throw new DeviceRevokedError();
+  }
 
   const device = await request.server.prisma.extensionInstall.findUnique({
     where: {

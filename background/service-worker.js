@@ -275,14 +275,6 @@ var MODEL_MATCHERS = [
   [/grok.*3.*mini|grok-3-mini/, "grok-3-mini"],
   [/grok.*3|grok-3/, "grok-3"]
 ];
-var SITE_MODEL_FALLBACKS = {
-  chatgpt: "gpt-4o",
-  claude: "claude-sonnet",
-  gemini: "gemini-2.5-flash",
-  perplexity: "sonar-pro",
-  grok: "grok-3",
-  generic: "generic"
-};
 function findKnownModelProfile(model) {
   const key = normalizeModelKey(model);
   const exactId = MODEL_LOOKUP[key];
@@ -295,7 +287,15 @@ function findKnownModelProfile(model) {
 function resolveModelProfile(model, site = "generic") {
   const knownProfile = findKnownModelProfile(model);
   if (knownProfile) return knownProfile;
-  return MODEL_CATALOG[SITE_MODEL_FALLBACKS[site] ?? "generic"] ?? MODEL_CATALOG.generic;
+  return {
+    id: normalizeModelKey(model) || "unknown",
+    label: model || "Unknown model",
+    provider: site,
+    contextWindow: null,
+    estimatedInputCostPer1k: null,
+    estimatedOutputCostPer1k: null,
+    quotaTier: "Unknown"
+  };
 }
 function modelLabelForDisplay(model) {
   return findKnownModelProfile(model)?.label ?? model;
@@ -454,8 +454,11 @@ function formatPercent(value) {
 function eventCost(event, preferences) {
   const siteSettings = preferences.sites[event.site] ?? DEFAULT_PREFERENCES.sites.generic;
   const modelProfile = resolveModelProfile(event.model, event.site);
-  const inputRate = nonNegativeNumberOr(siteSettings.costInputPer1k, modelProfile.estimatedInputCostPer1k ?? 0);
-  const outputRate = nonNegativeNumberOr(siteSettings.costOutputPer1k, modelProfile.estimatedOutputCostPer1k ?? 0);
+  if (modelProfile.estimatedInputCostPer1k == null || modelProfile.estimatedOutputCostPer1k == null) {
+    return 0;
+  }
+  const inputRate = nonNegativeNumberOr(siteSettings.costInputPer1k, modelProfile.estimatedInputCostPer1k);
+  const outputRate = nonNegativeNumberOr(siteSettings.costOutputPer1k, modelProfile.estimatedOutputCostPer1k);
   return event.promptTokens / 1e3 * inputRate + event.outputTokens / 1e3 * outputRate;
 }
 function fillWindow(start, count, stepMs, values) {
@@ -1131,15 +1134,21 @@ async function readStateFromStorage() {
 async function getState() {
   return enqueueStateOperation(() => readStateFromStorage());
 }
+var _lastSyncedPreferencesJson = "";
 async function writeStateToStorage(state) {
   const hydrated = hydrateState(state);
   await storageSet({ [STATE_KEY]: hydrated });
   const sync = syncArea();
   if (sync) {
     if (hydrated.preferences.privacyMode === "sync-preferences") {
-      await sync.set({ [PREFERENCES_SYNC_KEY]: hydrated.preferences });
+      const prefJson = JSON.stringify(hydrated.preferences);
+      if (prefJson !== _lastSyncedPreferencesJson) {
+        await sync.set({ [PREFERENCES_SYNC_KEY]: hydrated.preferences });
+        _lastSyncedPreferencesJson = prefJson;
+      }
     } else {
       await sync.remove(PREFERENCES_SYNC_KEY);
+      _lastSyncedPreferencesJson = "";
     }
   }
   return hydrated;
@@ -1731,12 +1740,24 @@ async function runCloudSync(generation) {
       config.syncedClientEventIds = normalizeCloudKeyMap(config.syncedClientEventIds);
       config = await writeCloudConfigForConnection(config, connectionId, generation);
     }
-    const remoteState = await cloudRequest(config, "/v1/sync/state", {
-      method: "POST",
-      body: { includeUsage: true, maxEvents: 500 }
-    });
-    if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
-    config = await mergeCloudUsageEvents(remoteState?.usageEvents, config);
+    var CLOUD_SYNC_MAX_PAGES = 10;
+    var allRemoteEvents = [];
+    var syncCursor = void 0;
+    for (var syncPage = 0; syncPage < CLOUD_SYNC_MAX_PAGES; syncPage++) {
+      var syncBody = { includeUsage: true, maxEvents: 500 };
+      if (syncCursor) syncBody.cursor = syncCursor;
+      var remoteState = await cloudRequest(config, "/v1/sync/state", {
+        method: "POST",
+        body: syncBody
+      });
+      if (generation !== cloudConnectionGeneration) throw cloudOperationCancelled();
+      if (Array.isArray(remoteState?.usageEvents)) {
+        allRemoteEvents = allRemoteEvents.concat(remoteState.usageEvents);
+      }
+      if (!remoteState?.usagePage?.hasMore || !remoteState?.usagePage?.nextCursor) break;
+      syncCursor = remoteState.usagePage.nextCursor;
+    }
+    config = await mergeCloudUsageEvents(allRemoteEvents, config);
     const quota = await cloudRequest(config, "/v1/quota/check");
     config = await writeCloudConfigForConnection({
       ...config,

@@ -314,16 +314,16 @@ export function resolveModelProfile(model: string, provider = "generic"): ModelP
     }
   }
 
-  // Provider-based fallback
-  const providerLower = provider.toLowerCase();
-  if (providerLower.includes("chatgpt") || providerLower.includes("openai")) return MODEL_CATALOG["gpt-4o"]!;
-  if (providerLower.includes("claude") || providerLower.includes("anthropic")) return MODEL_CATALOG["claude-sonnet"]!;
-  if (providerLower.includes("gemini") || providerLower.includes("google")) return MODEL_CATALOG["gemini-2.5-flash"]!;
-  if (providerLower.includes("perplexity")) return MODEL_CATALOG["sonar-pro"]!;
-  if (providerLower.includes("grok") || providerLower.includes("xai")) return MODEL_CATALOG["grok-3"]!;
-  if (providerLower.includes("deepseek")) return MODEL_CATALOG["deepseek-chat"]!;
-
-  return MODEL_CATALOG["generic"]!;
+  // Unknown model — return honest profile with zero cost, never fabricate pricing
+  return {
+    id: normalized || "unknown",
+    label: model || "Unknown model",
+    provider,
+    contextWindow: 0,
+    inputCostPer1M: 0,
+    outputCostPer1M: 0,
+    quotaTier: "Unknown"
+  };
 }
 
 export function calculateCost(promptTokens: number, outputTokens: number, model: string, provider = "generic"): CostBreakdown {

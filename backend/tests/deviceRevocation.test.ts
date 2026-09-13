@@ -12,7 +12,7 @@ process.env.LOG_HASH_SECRET ??= "01234567890123456789012345678901";
 
 const { DeviceRevokedError, verifyDeviceNotRevoked } = await import("../src/services/devices.js");
 
-test("verifyDeviceNotRevoked does nothing when installId header is omitted", async () => {
+test("verifyDeviceNotRevoked throws DeviceRevokedError when installId header is omitted", async () => {
   const req = {
     auth: { userId: "user-123", authSubject: "sub-123" },
     headers: {},
@@ -27,10 +27,12 @@ test("verifyDeviceNotRevoked does nothing when installId header is omitted", asy
     }
   };
 
-  await assert.doesNotReject(async () => {
-    await verifyDeviceNotRevoked(req as never);
-  });
-  assert.equal(req.auth.deviceId, undefined);
+  await assert.rejects(
+    async () => {
+      await verifyDeviceNotRevoked(req as never);
+    },
+    (err: unknown) => err instanceof DeviceRevokedError && (err as DeviceRevokedError).statusCode === 403
+  );
 });
 
 test("verifyDeviceNotRevoked throws DeviceRevokedError for revoked installs", async () => {
