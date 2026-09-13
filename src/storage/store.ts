@@ -118,18 +118,14 @@ export function finiteNumberOr(value: any, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
     // @ts-ignore
-export function nonNegativeNumberOr(value: any, fallback: any = 0) {
-  if (value === null) return null;
+export function nonNegativeNumberOr(value: any, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) && num >= 0 ? num : fallback;
 }
     // @ts-ignore
     // @ts-ignore
-export function boundedNonNegativeNumberOr(value: any, max: any, fallback: any = 0) {
-  if (value === null) return null;
-  const num = nonNegativeNumberOr(value, fallback);
-  if (num === null) return null;
-  return Math.min(max, num);
+export function boundedNonNegativeNumberOr(value: any, max: any, fallback = 0) {
+  return Math.min(max, nonNegativeNumberOr(value, fallback));
 }
     // @ts-ignore
     // @ts-ignore
@@ -445,19 +441,9 @@ export function normalizeUsageEvent(event: any) {
   if (!isPlainObject(event)) return void 0;
   const site = normalizeSite(event.site);
   const model = boundedString(event.model, 120, "generic");
-  const promptTokens = boundedNonNegativeNumberOr(event.promptTokens, 2_000_000, null);
-  const outputTokens = boundedNonNegativeNumberOr(event.outputTokens, 2_000_000, null);
-  
-  let sumTokens = null;
-  if (promptTokens !== null && outputTokens !== null) {
-      sumTokens = promptTokens + outputTokens;
-  }
-  
-  let totalTokens = boundedNonNegativeNumberOr(event.totalTokens, 4_000_000, null);
-  if (totalTokens === null && sumTokens !== null) totalTokens = sumTokens;
-  if (totalTokens !== null && sumTokens !== null) {
-      totalTokens = Math.min(4_000_000, Math.max(sumTokens, totalTokens));
-  }
+  const promptTokens = boundedNonNegativeNumberOr(event.promptTokens, 2_000_000);
+  const outputTokens = boundedNonNegativeNumberOr(event.outputTokens, 2_000_000);
+  const totalTokens = Math.min(4_000_000, Math.max(promptTokens + outputTokens, boundedNonNegativeNumberOr(event.totalTokens, 4_000_000, promptTokens + outputTokens)));
   return {
     site,
     model,

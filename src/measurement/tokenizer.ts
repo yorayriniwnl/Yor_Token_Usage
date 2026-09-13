@@ -1,15 +1,16 @@
 let encodeFn: ((text: string) => number[]) | null = null;
 
-if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.runtime) {
-  const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('content/gpt-tokenizer.js');
-  script.onload = () => {
-    encodeFn = (globalThis as any).GptTokenizer_encode;
-  };
-  document.head.appendChild(script);
-} else {
-  // Fallback for non-browser environments if any
-  import('gpt-tokenizer').then(mod => { encodeFn = mod.encode; }).catch(() => {});
+if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+  try {
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('content/gpt-tokenizer.js');
+    script.onload = () => {
+      encodeFn = (globalThis as any).GptTokenizer_encode || null;
+    };
+    (document.head || document.documentElement).appendChild(script);
+  } catch {}
+} else if (typeof globalThis !== 'undefined' && (globalThis as any).GptTokenizer_encode) {
+  encodeFn = (globalThis as any).GptTokenizer_encode;
 }
 
 export interface DeterministicTokenizerResult {

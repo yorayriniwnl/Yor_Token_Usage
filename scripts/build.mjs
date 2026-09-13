@@ -64,7 +64,7 @@ await Promise.all(
     await build({
       ...target,
       bundle: true,
-      external: ["gpt-tokenizer"],
+      external: target.outfile.endsWith("gpt-tokenizer.js") ? [] : ["gpt-tokenizer"],
       sourcemap: false,
       legalComments: "none",
       minify: false,
