@@ -6,6 +6,20 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $scriptDir
+
+Push-Location $root
+try {
+  Write-Host "Running typecheck..."
+  npm run typecheck
+  if ($LASTEXITCODE -ne 0) { throw "TypeScript typecheck failed" }
+
+  Write-Host "Building fresh bundles..."
+  npm run build
+  if ($LASTEXITCODE -ne 0) { throw "Extension build failed" }
+} finally {
+  Pop-Location
+}
+
 $extensionDirs = @("background", "content", "dashboard", "popup", "settings")
 
 foreach ($dir in $extensionDirs) {

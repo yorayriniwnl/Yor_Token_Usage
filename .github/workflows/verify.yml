@@ -78,10 +78,22 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install extension verification dependencies
         run: npm ci
+      - name: Verify TypeScript compilation
+        run: npm run typecheck
+      - name: Build extension runtime bundles from source
+        run: npm run build
       - name: Verify extension design contract
         run: npm run design:check
       - name: Run accuracy calibration regression
         run: npm run accuracy:benchmark
+      - name: Verify quota evidence parsing
+        run: npm run quota:check
+      - name: Verify overlay window calculations
+        run: npm run overlay:check
+      - name: Verify reset predictor logic
+        run: npm run reset:check
+      - name: Run adversarial stress suite
+        run: npm run stress:check
       - name: Install Chromium for extension regressions
         run: npx playwright install --with-deps chromium
       - name: Verify unpacked extension in Chromium (controlled provider fixture)
