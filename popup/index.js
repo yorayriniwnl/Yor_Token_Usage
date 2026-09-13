@@ -293,15 +293,15 @@ function buildSessionSummary(session, snapshot) {
   if (!previous) {
     return `Watching ${SITE_LABELS[session.site]} with ${session.model}. Your first captured exchange will appear here.`;
   }
-  const delta = session.currentEstimate.inputTokens - (previous.promptTokens ?? previous.totalTokens ?? 0);
+  const delta = session.draftAnalysis?.inputTokens - (previous.promptTokens ?? previous.totalTokens ?? 0);
   const direction = delta >= 0 ? "larger" : "smaller";
-  return `The active prompt is ${formatTokens(Math.abs(delta))} tokens ${direction} than the previous captured exchange, and the current thread is around ${formatTokens(session.currentThread?.totalTokens)} tokens.`;
+  return `The active prompt is ${formatTokens(Math.abs(delta))} tokens ${direction} than the previous captured exchange, and the current thread is around ${formatTokens(session.contextAccounting?.visibleThreadTokens)} tokens.`;
 }
 function renderHero(snapshot) {
   const session = snapshot.currentSession;
-  const percent = Number.isFinite(session?.quota.percentUsed) ? session.quota.percentUsed : 0;
-  const statusLabel = session?.quota.status === "limited" ? "Limit reached" : session?.quota.status === "warning" ? "Near limit" : session?.quota.accuracy === "exact" ? "Provider signal" : "Estimated";
-  const measurement = session?.currentEstimate?.measurement;
+  const percent = Number.isFinite(session?.quotaSignal?.percentUsed) ? session.quotaSignal.percentUsed : 0;
+  const statusLabel = session?.quotaSignal?.status === "limited" ? "Limit reached" : session?.quotaSignal?.status === "warning" ? "Near limit" : session?.quotaSignal?.source === "provider_ui" ? "Provider signal" : "Estimated";
+  const measurement = session?.draftAnalysis?.measurement;
   const measurementLabel = measurement?.measurementLevel === "approximation" ? "Approximate" : measurement?.measurementLevel === "calibrated_estimate" ? "Calibrated estimate" : "Unknown";
   const measurementConfidence = Number.isFinite(measurement?.confidence) ? `${Math.round(measurement.confidence * 100)}% confidence` : "confidence unknown";
   const measurementMargin = Number.isFinite(measurement?.errorMarginPercent) ? `\xB1${Math.round(measurement.errorMarginPercent)}% bound` : "no error bound";
@@ -309,23 +309,23 @@ function renderHero(snapshot) {
     <div class="hero-copy">
       <div>
         <h2>${escapeHtml(session ? `${SITE_LABELS[session.site]} \u2022 ${session.model}` : "No active AI tab")}</h2>
-        <p>${escapeHtml(session ? `Reset ${session.quota.nextReset?.localLabel ?? "unknown"} \u2022 last update ${formatClock(session.lastUpdated)}` : "Pin the popup while you work to monitor usage in real time.")}</p>
-        ${session ? `<p class="measurement-note" title="${escapeHtml(measurement?.note ?? "Token provenance is unavailable.")}">${escapeHtml(`${measurementLabel} \u2022 ${measurementConfidence} \u2022 ${measurementMargin}`)}</p>` : ""}
+        <p>${escapeHtml(session ? `Reset ${session.quotaSignal?.resetAt ? formatClock(session.quotaSignal.resetAt) : "unknown"} \u2022 last update ${formatClock(session.lastUpdated)}` : "Pin the popup while you work to monitor usage in real time.")}</p>
+        ${session ? `<p class="measurement-note" title="${escapeHtml(measurement?.notes ?? "Token provenance is unavailable.")}">${escapeHtml(`${measurementLabel} \u2022 ${measurementConfidence} \u2022 ${measurementMargin}`)}</p>` : ""}
       </div>
       <span class="status-chip">${escapeHtml(statusLabel)}</span>
     </div>
     <div class="metric-grid">
       <div class="metric"><strong>${formatTokens(snapshot.summary.tokensToday)}</strong><span>today</span></div>
       <div class="metric"><strong>${formatTokens(snapshot.summary.tokensThisWeek)}</strong><span>7-day total</span></div>
-      <div class="metric"><strong>${session ? formatTokens(session.currentEstimate.inputTokens) : "\u2014"}</strong><span>current prompt</span></div>
+      <div class="metric"><strong>${session ? formatTokens(session.draftAnalysis?.inputTokens) : "\u2014"}</strong><span>current prompt</span></div>
       <div class="metric"><strong>${formatCurrency(snapshot.summary.costThisWeek)}</strong><span>est. cost</span></div>
     </div>
     <div class="meter-track"><span style="width:${Math.max(4, Math.min(percent, 100))}%"></span></div>
     <div class="metric-grid secondary">
-      <div class="metric"><strong>${session ? formatPercent(session.quota.percentUsed) : "\u2014"}</strong><span>quota used</span></div>
-      <div class="metric"><strong>${session ? formatTokens(session.quota.remainingTokens) : "\u2014"}</strong><span>remaining</span></div>
-      <div class="metric"><strong>${session ? formatTokens(session.currentThread?.totalTokens) : "\u2014"}</strong><span>thread total</span></div>
-      <div class="metric"><strong>${session ? `${session.currentEstimate.compressionScore}%` : "\u2014"}</strong><span>save potential</span></div>
+      <div class="metric"><strong>${session ? formatPercent(session.quotaSignal?.percentUsed) : "\u2014"}</strong><span>quota used</span></div>
+      <div class="metric"><strong>${session ? formatTokens(session.quotaSignal?.remainingTokens) : "\u2014"}</strong><span>remaining</span></div>
+      <div class="metric"><strong>${session ? formatTokens(session.contextAccounting?.visibleThreadTokens) : "\u2014"}</strong><span>thread total</span></div>
+      <div class="metric"><strong>\u2014</strong><span>save potential</span></div>
     </div>
   `;
 }
@@ -353,7 +353,7 @@ async function render() {
     modelBreakdown,
     (snapshot.analytics.byModel || []).slice(0, 4).map((item) => ({ label: item.label, value: item.tokens, meta: `${formatTokens(item.tokens)} \u2022 ${item.prompts} prompts` }))
   );
-  const currentSuggestions = snapshot.currentSession?.currentEstimate.suggestions ?? [];
+  const currentSuggestions = [];
   suggestions.innerHTML = currentSuggestions.length ? currentSuggestions.slice(0, 3).map(
     (item) => `
             <div class="suggestion-card">
@@ -367,17 +367,17 @@ async function render() {
     const session = snapshot.currentSession;
     await runButtonAction(event.currentTarget, async () => {
       const summary = session ? `${SITE_LABELS[session.site]} \u2022 ${session.model}
-Current prompt: ${formatTokens(session.currentEstimate.inputTokens)}
-Thread total: ${formatTokens(session.currentThread?.totalTokens)}
-Quota used: ${formatPercent(session.quota.percentUsed)}
-Reset: ${session.quota.nextReset?.localLabel ?? "unknown"}` : "No active AI session yet.";
+Current prompt: ${formatTokens(session.draftAnalysis?.inputTokens)}
+Thread total: ${formatTokens(session.contextAccounting?.visibleThreadTokens)}
+Quota used: ${session.quotaSignal?.percentUsed != null ? formatPercent(session.quotaSignal.percentUsed) : "unknown"}
+Reset: ${session.quotaSignal?.resetAt ? formatClock(session.quotaSignal.resetAt) : "unknown"}` : "No active AI session yet.";
       await navigator.clipboard.writeText(summary);
     }, "Copied");
   };
   document.querySelector("#copy-shorter-btn").onclick = async (event) => {
     await runButtonAction(event.currentTarget, async () => {
-      const shorter = snapshot.currentSession?.currentEstimate.variants.shorter;
-      await navigator.clipboard.writeText(shorter || snapshot.currentSession?.currentInput || "");
+      const shorter = snapshot.currentSession?.currentDraft;
+      await navigator.clipboard.writeText(shorter || "");
     }, "Copied");
   };
   document.querySelector("#dashboard-btn").onclick = async (event) => {
