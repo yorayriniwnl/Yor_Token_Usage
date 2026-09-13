@@ -10,7 +10,8 @@
     "overlay:check": "node scripts/verify-overlay-window.mjs",
     "quota:check": "node scripts/verify-quota-evidence.mjs",
     "browser:check": "node scripts/verify-overlay-browser.cjs",
-    "capture:check": "node scripts/verify-capture-browser.cjs"
+    "capture:check": "node scripts/verify-capture-browser.cjs",
+    "stress:check": "node scripts/verify-adversarial-stress.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.9",
