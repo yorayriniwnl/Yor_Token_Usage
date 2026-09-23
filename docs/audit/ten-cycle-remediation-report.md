@@ -120,6 +120,38 @@ The event helper now resets its duplicate signature on composer input changes. T
 
 ---
 
-## Cycles 4–10
+## Cycle 4 — stable response completion
+
+### Finding
+
+When a provider exposes no stop control, the first non-empty assistant DOM update immediately committed the response. A rendered partial could therefore become a durable usage event.
+
+### Red test
+
+`node scripts/verify-capture-state.mjs` initially failed with `a response without a stop control must not commit immediately` (`1 !== 0`).
+
+### Implementation
+
+Added a one-second quiet period, restarted on changed assistant text. The callback confirms that the same new assistant message still exists, polls while a stop control remains, then commits once stable. Navigation, rate-limit, cancel, completion, and existing timeout paths clear the completion timer.
+
+### Strict audit
+
+The quiet, continued-stream, stop-control, and single-commit checks pass. Review found the ten-minute abandonment guard still runs only inside `onDomUpdate`; if an empty or silent response produces no further DOM mutations, the pending exchange never expires.
+
+### Fix prompt
+
+See the cycle-4 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. It adds a no-mutation deadline test and requires a real timer that discards stale pending work without committing partial text.
+
+### Follow-up implementation
+
+Added a per-exchange ten-minute timer scheduled at submit time and cleared on completion, rate-limit, cancel, navigation, replacement, or abandonment. The new red test submitted without any DOM update and advanced past the deadline; it failed because the pending draft remained. After the fix the state becomes `ABANDONED`, the pending exchange is cleared, no event is committed, and all timers are released.
+
+### Strong audit
+
+`node scripts/verify-capture-state.mjs` passes for a no-stop stable response, a response that keeps growing, a stop control that remains visible, a silent request crossing the deadline, single-commit behavior, and timer cleanup. The focused live-capture tests and fresh build also pass. The completion callback re-reads the latest assistant message and checks its id/text before committing, so a stale timer cannot finalize a replaced DOM node.
+
+---
+
+## Cycles 5–10
 
 Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.

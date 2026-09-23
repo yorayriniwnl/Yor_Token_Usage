@@ -15,3 +15,7 @@ Use this prompt with the current source tree and the latest entry in `docs/audit
 ## Cycle 3 follow-up prompt
 
 > Enter, native form submit, and click now share one capture path, but strict review found that the dedupe window can suppress a legitimate identical prompt after the user clears and retypes it quickly. Add a failing event regression for clear/retype of the same text, reset dedupe when composer input changes, and prove that duplicate send signals without an intervening edit still produce one capture. Rebuild, run the event and live-capture regressions, and record the strong audit evidence. Preserve Shift+Enter/IME handling and do not prevent the provider's default send action.
+
+## Cycle 4 follow-up prompt
+
+> Streaming completion now waits for stable text, but strict review found that the ten-minute timeout only runs during DOM updates. A request with no response or no further page mutations can remain pending indefinitely. Add a failing regression that submits a prompt, emits no response DOM update, advances past the ten-minute deadline, and proves pending state is abandoned with no commit. Schedule and clear a real deadline timer with the exchange lifecycle; retain the DOM-time check as a defense. Re-run quiet-stream, stop-control, cancel, navigation, timeout, and build checks, then record the strong audit.

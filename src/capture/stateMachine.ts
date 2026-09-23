@@ -1,6 +1,10 @@
 import type { CapturedMessage, ObservedQuotaSignal, ProviderSiteAdapter } from "../types/adapters.js";
 import { compactWhitespace, uid } from "../shared/utils.js";
 
+const RESPONSE_QUIET_PERIOD_MS = 1_000;
+const COMPLETION_RECHECK_INTERVAL_MS = 250;
+const PENDING_TIMEOUT_MS = 10 * 60_000;
+
 function estimateTokens(text: string): number {
   const engine = (globalThis as any).YorTokenAccuracy;
   if (engine?.estimateTokenBreakdown) {
@@ -43,6 +47,7 @@ export interface PendingExchange {
   promptChars: number;
   startedAt: number;
   lastStreamingAt?: number;
+  lastAssistantId?: string;
   lastAssistantText?: string;
   awaitingThreadAssignment?: boolean;
   knownAssistantIds: Set<string>;
@@ -68,6 +73,8 @@ export interface CommittedExchange {
 export class CaptureStateMachine {
   private state: CaptureState = "IDLE";
   private pending: PendingExchange | null = null;
+  private completionTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private adapter: ProviderSiteAdapter;
   private onCommit: (event: CommittedExchange) => void;
 
@@ -100,6 +107,9 @@ export class CaptureStateMachine {
     const trimmed = promptText.trim();
     if (!trimmed) return false;
 
+    this.clearCompletionTimer();
+    this.clearPendingTimeoutTimer();
+
     const promptTokens = estimateTokens(trimmed);
     const knownAssistantIds = new Set<string>();
     visibleMessages
@@ -120,6 +130,7 @@ export class CaptureStateMachine {
     };
 
     this.state = "SUBMITTED";
+    this.schedulePendingTimeout(this.pending.id);
     return true;
   }
 
@@ -134,6 +145,8 @@ export class CaptureStateMachine {
     quotaSignal: ObservedQuotaSignal | null
   ): void {
     if (!this.pending) {
+      this.clearCompletionTimer();
+      this.clearPendingTimeoutTimer();
       if (this.state !== "IDLE" && this.state !== "DRAFTING") {
         this.state = "IDLE";
       }
@@ -153,14 +166,12 @@ export class CaptureStateMachine {
           this.pending.threadId = currentThreadId;
           this.pending.awaitingThreadAssignment = false;
         } else {
-          this.state = "ABANDONED";
-          this.pending = null;
+          this.abandonPending();
           return;
         }
       } else {
         // Navigated away to a different chat: discard pending prompt to prevent cross-chat contamination
-        this.state = "ABANDONED";
-        this.pending = null;
+        this.abandonPending();
         return;
       }
     }
@@ -168,6 +179,11 @@ export class CaptureStateMachine {
     // Check if provider hit a rate limit
     if (quotaSignal && quotaSignal.status === "limited") {
       this.transitionToRateLimited(quotaSignal.rateLimitMessage);
+      return;
+    }
+
+    if (now - this.pending.startedAt >= PENDING_TIMEOUT_MS) {
+      this.abandonPending();
       return;
     }
 
@@ -186,23 +202,19 @@ export class CaptureStateMachine {
 
     if (isGenerating || (latestAssistant && latestAssistant.text.length > 0)) {
       this.state = "STREAMING";
-      this.pending.lastStreamingAt = now;
-      if (latestAssistant) {
+      if (latestAssistant?.text && (
+        latestAssistant.text !== this.pending.lastAssistantText ||
+        latestAssistant.id !== this.pending.lastAssistantId
+      )) {
+        this.clearCompletionTimer();
+        this.pending.lastStreamingAt = now;
+        this.pending.lastAssistantId = latestAssistant.id;
         this.pending.lastAssistantText = latestAssistant.text;
       }
     }
 
-    // Completion condition:
-    // Was streaming or awaiting response, stop button is gone, and we have a non-empty assistant response.
-    if (!isGenerating && this.state === "STREAMING" && this.pending.lastAssistantText) {
-      this.transitionToCompleted(this.pending.lastAssistantText);
-      return;
-    }
-
-    // Timeout / Abandoned safeguard (10 minutes)
-    if (now - this.pending.startedAt > 10 * 60_000) {
-      this.state = "ABANDONED";
-      this.pending = null;
+    if (this.state === "STREAMING" && this.pending.lastAssistantText && this.pending.lastAssistantId) {
+      this.scheduleCompletionCheck(root, this.pending.id);
     }
   }
 
@@ -215,12 +227,17 @@ export class CaptureStateMachine {
       this.transitionToCompleted(this.pending.lastAssistantText);
     } else {
       this.state = "ABANDONED";
+      this.clearCompletionTimer();
+      this.clearPendingTimeoutTimer();
       this.pending = null;
     }
   }
 
   private transitionToCompleted(assistantText: string): void {
     if (!this.pending) return;
+
+    this.clearCompletionTimer();
+    this.clearPendingTimeoutTimer();
 
     const outputTokens = estimateTokens(assistantText);
     const measurement = makeMeasurement(this.adapter.site, this.pending.model, "visible provider DOM response");
@@ -251,6 +268,9 @@ export class CaptureStateMachine {
   private transitionToRateLimited(_message?: string): void {
     if (!this.pending) return;
 
+    this.clearCompletionTimer();
+    this.clearPendingTimeoutTimer();
+
     const measurement = makeMeasurement(this.adapter.site, this.pending.model, "provider rate limit signal");
 
     const committed: CommittedExchange = {
@@ -274,5 +294,70 @@ export class CaptureStateMachine {
     this.pending = null;
     this.onCommit(committed);
     this.state = "IDLE";
+  }
+
+  private scheduleCompletionCheck(root: ParentNode, pendingId: string, delayMs = RESPONSE_QUIET_PERIOD_MS): void {
+    if (this.completionTimer !== null) return;
+    this.completionTimer = setTimeout(() => {
+      this.completionTimer = null;
+      const pending = this.pending;
+      if (!pending || pending.id !== pendingId || !pending.lastAssistantId || !pending.lastAssistantText) return;
+
+      const now = Date.now();
+      if (now - pending.startedAt >= PENDING_TIMEOUT_MS) {
+        this.abandonPending();
+        return;
+      }
+      if (this.adapter.findStopControl(root)) {
+        this.scheduleCompletionCheck(root, pendingId, COMPLETION_RECHECK_INTERVAL_MS);
+        return;
+      }
+
+      const latestAssistant = this.adapter.collectVisibleMessages(root)
+        .filter((message) => message.role === "assistant" && !pending.knownAssistantIds.has(message.id))
+        .at(-1);
+      if (
+        !latestAssistant ||
+        latestAssistant.id !== pending.lastAssistantId ||
+        latestAssistant.text !== pending.lastAssistantText
+      ) {
+        return;
+      }
+
+      const quietFor = now - (pending.lastStreamingAt ?? now);
+      if (quietFor < RESPONSE_QUIET_PERIOD_MS) {
+        this.scheduleCompletionCheck(root, pendingId, RESPONSE_QUIET_PERIOD_MS - quietFor);
+        return;
+      }
+      this.transitionToCompleted(pending.lastAssistantText);
+    }, Math.max(0, delayMs));
+  }
+
+  private clearCompletionTimer(): void {
+    if (this.completionTimer !== null) {
+      clearTimeout(this.completionTimer);
+      this.completionTimer = null;
+    }
+  }
+
+  private schedulePendingTimeout(pendingId: string): void {
+    this.pendingTimeoutTimer = setTimeout(() => {
+      this.pendingTimeoutTimer = null;
+      if (this.pending?.id === pendingId) this.abandonPending();
+    }, PENDING_TIMEOUT_MS);
+  }
+
+  private clearPendingTimeoutTimer(): void {
+    if (this.pendingTimeoutTimer !== null) {
+      clearTimeout(this.pendingTimeoutTimer);
+      this.pendingTimeoutTimer = null;
+    }
+  }
+
+  private abandonPending(): void {
+    this.clearCompletionTimer();
+    this.clearPendingTimeoutTimer();
+    this.state = "ABANDONED";
+    this.pending = null;
   }
 }

@@ -78,16 +78,15 @@
 
 **Files:**
 - Modify: `src/capture/stateMachine.ts`
-- Create or extend: `scripts/verify-live-capture.mjs`
-- Modify if required: `scripts/verify-capture-browser.cjs`
+- Create: `scripts/verify-capture-state.mjs`
 
 **Interfaces:** Keep `CaptureStateMachine.onDomUpdate` and `onUserCancel`; add an injectable or exported completion timing constant only if needed for deterministic tests.
 
-- [ ] Add tests for text that continues growing, text that goes quiet without a stop control, explicit stop-control removal, and stale empty response.
-- [ ] Run the regression; expected baseline: non-empty text commits immediately when no stop control exists.
-- [ ] Track text changes rather than every DOM poll; commit after stable quiet time and abandon the existing hard timeout without writing partial output.
-- [ ] Rebuild and rerun focused capture checks; expected: growing text remains pending and stable output is committed once.
-- [ ] Strict-audit delayed updates, navigation, cancel, and duplicate mutation notifications; record cycle 4.
+- [x] Add tests for text that continues growing, text that goes quiet without a stop control, explicit stop-control removal, silent timeout, and timer cleanup.
+- [x] Run the regression; expected baseline: non-empty text commits immediately when no stop control exists.
+- [x] Track text changes rather than every DOM poll; commit after stable quiet time and abandon the hard timeout without writing partial output.
+- [x] Rebuild and rerun focused capture checks; expected: growing text remains pending and stable output is committed once.
+- [x] Strict-audit delayed updates, navigation, cancel, and duplicate mutation notifications; record cycle 4.
 
 ### Task 5: Minimize content-script state
 
