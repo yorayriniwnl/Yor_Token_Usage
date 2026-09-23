@@ -256,6 +256,38 @@ Restricted the copy candidate to line-ending normalization and excess blank-line
 
 ---
 
-## Cycles 8–10
+## Cycle 8 — extension package completeness
+
+### Finding
+
+The release verifier builds ignored JavaScript bundles before packaging, but calling `scripts/package-extension.ps1` directly from a clean checkout silently created a ZIP even though the manifest's background worker and content scripts did not exist.
+
+### Red test
+
+`node scripts/verify-package-preflight.mjs` failed with exit code `0` because the packager accepted the fixture with missing `background/service-worker.js` and `content/index.js` and wrote an archive.
+
+### Implementation
+
+Added a preflight that parses `manifest.json` and refuses to package when referenced literal files are missing, with the missing paths in the error.
+
+### Strict audit
+
+After literal references were checked, the follow-up fixture created those files but included an unmatched web-accessible-resource glob `assets/fonts/*.woff2`; packaging still returned success and wrote a ZIP because the first pass skipped wildcard entries. Review also identified path traversal references and the need to assert that each manifest resource is present in the produced archive. The first full release-verifier run then failed because the runtime mock lacked `chrome.tabs.onRemoved` and used an untrusted default sender for extension-only operations. Once repaired, the package scan falsely rejected the generated tokenizer bundle because its encoded vocabulary includes the plain string `sourceMappingURL`.
+
+### Fix prompt
+
+See the cycle-8 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. Validate literal and wildcard manifest resources; reject absolute/traversal paths outside the extension root; prove every resolved manifest resource is included in the archive; validate the archive before replacing a prior output; and test both a clean-checkout failure and a complete reproducible package.
+
+### Follow-up implementation
+
+Expanded package validation to resolve literal files and wildcard resources under the extension root, reject traversal, confirm the resolved files belong to the package set, and re-open the temporary ZIP to verify every manifest entry before replacing the requested output. Existing valid output survives any validation or packaging failure; output paths cannot overwrite required files or land inside packaged directories. The source-map check now detects actual trailing comment directives rather than any occurrence of the token name. Updated the hostile runtime harness to model extension-page senders and the `tabs.onRemoved` event. Documented the `npm ci` prerequisite and direct-packager build precondition.
+
+### Strong audit
+
+`node scripts/verify-package-preflight.mjs` passes missing worker/content file, unmatched glob, traversal, source-map directive, embedded `sourceMappingURL` string, archive membership, output collision, output-directory, old-output preservation, and byte-for-byte reproducibility checks. The documented `scripts/verify-extension.ps1` pipeline passes typecheck, build, quota evidence, overlay-window, reset predictor, extension runtime normalization, package creation, and repeated-package SHA-256 equality (`2A05AC57575F60A19B4C8CE88CF28F33AAAD4FEB8D3AFECE050330694EFD7D2B`). This runner does not include `npm`; a temporary local shim mapped its `npm run typecheck` and `npm run build` calls to the same installed Node scripts. The generated ZIP was readable and 1,708,143 bytes. `git diff --check` passes.
+
+---
+
+## Cycles 9–10
 
 Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.

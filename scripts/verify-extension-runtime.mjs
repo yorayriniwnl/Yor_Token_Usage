@@ -29,6 +29,7 @@ const storageArea = createStorageArea(storage);
 const sessionStorageArea = createStorageArea(sessionStorage);
 const extensionId = "abcdefghijklmnopabcdefghijklmnop";
 const extensionRoot = `chrome-extension://${extensionId}/`;
+const internalSender = { url: `${extensionRoot}settings/settings.html` };
 
 async function fakeFetch(input, init = {}) {
   const url = String(input);
@@ -86,7 +87,12 @@ const chrome = {
   },
   notifications: { create: async () => "test-notification" },
   permissions: { contains: async () => true, request: async () => true },
-  tabs: { query: async () => [], sendMessage: async () => ({ ok: false }), create: async () => {} }
+  tabs: {
+    onRemoved: event("tab-removed"),
+    query: async () => [],
+    sendMessage: async () => ({ ok: false }),
+    create: async () => {}
+  }
 };
 
 vm.runInNewContext(source, {
@@ -111,7 +117,7 @@ vm.runInNewContext(source, {
   structuredClone
 }, { filename: "background/service-worker.js" });
 
-function dispatch(message, sender = {}) {
+function dispatch(message, sender = internalSender) {
   return new Promise((resolve, reject) => {
     const listener = listeners.get("message");
     if (!listener) {
@@ -242,7 +248,6 @@ if (externalCloudAttempt?.ok !== false) {
   throw new Error("cloud account controls accepted a non-extension sender");
 }
 
-const internalSender = { url: `${extensionRoot}settings/settings.html` };
 const connected = await dispatch({
   type: "cloud-connect",
   payload: {

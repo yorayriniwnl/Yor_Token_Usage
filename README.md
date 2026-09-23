@@ -24,13 +24,14 @@ The backend stores the same provenance fields and returns them through sync. Tel
 
 ## Verify the extension
 
-From PowerShell:
+From a clean checkout, install the extension build dependencies first, then run the release verifier from PowerShell. It typechecks and builds the generated bundles before packaging:
 
 ```powershell
+npm ci
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-extension.ps1 -Output "$env:TEMP\yor-token-usage.zip"
 ```
 
-The verifier checks every shipped JavaScript file, parses the Manifest V3 manifest, exercises hostile imports and the cloud transport contract, and packages the extension. Load the resulting ZIP contents or the project folder through `chrome://extensions` with Developer mode enabled.
+The verifier checks every shipped JavaScript file, parses the Manifest V3 manifest, exercises hostile imports and the cloud transport contract, and packages the extension. `scripts/package-extension.ps1` is the lower-level packager; run it after `npm run build`. It rejects missing manifest resources and incomplete archives instead of creating a broken ZIP. Load the resulting ZIP contents or the project folder through `chrome://extensions` with Developer mode enabled.
 
 For rendered regressions, run `npm ci`, `npx playwright install chromium`, then `npm run browser:check`. This loads the real unpacked extension and service worker in Chromium against controlled Claude-like HTML. It checks input updates, quota provenance, unknown/empty states, desktop/mobile positioning, details interaction, and settings persistence. It does **not** verify a signed-in provider account or current live provider selectors. Set `YOR_TEST_MOTION=normal` to also test normal motion (reduced motion is the default).
 
