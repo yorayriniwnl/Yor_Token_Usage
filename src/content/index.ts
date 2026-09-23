@@ -1,5 +1,6 @@
 import { getAdapterForUrl } from "../adapters/index.js";
 import { CaptureStateMachine, type CommittedExchange } from "../capture/stateMachine.js";
+import { observeUserSubmissions } from "../capture/submissionListeners.js";
 import { applyOverlayPosition } from "../overlay/overlay-position.js";
 import { parseQuotaHintsFromText } from "../adapters/base.js";
 import { debounce } from "../shared/utils.js";
@@ -464,20 +465,18 @@ async function init() {
     }
   });
 
-  // Attach submit listeners
-  document.addEventListener("click", (event) => {
-    const target = event.target as HTMLElement | null;
-    const sendBtn = activeAdapter.findSendControl();
-    if (sendBtn && (target === sendBtn || sendBtn.contains(target))) {
-      const composer = activeAdapter.findComposer();
-      const text = composer ? activeAdapter.readComposerText(composer) : "";
-      const model = activeAdapter.detectModel().label || "unknown";
-      const threadId = activeAdapter.getConversationId(new URL(window.location.href));
-      const messages = activeAdapter.collectVisibleMessages();
+  observeUserSubmissions(document, {
+    findComposer: () => activeAdapter.findComposer(),
+    findSendControl: () => activeAdapter.findSendControl(),
+    readComposerText: (composer) => activeAdapter.readComposerText(composer),
+    getModel: () => activeAdapter.detectModel().label || "unknown",
+    getThreadId: () => activeAdapter.getConversationId(new URL(window.location.href)),
+    getVisibleMessages: () => activeAdapter.collectVisibleMessages(),
+    onSubmit: (text, model, threadId, messages) => {
       stateMachine.onUserSubmit(text, model, threadId, messages);
       updateObservation();
     }
-  }, true);
+  });
 
   // MutationObserver for DOM changes
   const observer = new MutationObserver(() => {

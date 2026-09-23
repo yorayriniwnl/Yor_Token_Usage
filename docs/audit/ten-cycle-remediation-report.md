@@ -48,7 +48,7 @@ See `docs/audit/ten-cycle-remediation-fix-prompt.md`. The cycle-1 follow-up requ
 
 Added a `chrome.tabs.onRemoved` listener that calls `SessionManager.removeTab`. Expanded the regression to open a second same-provider tab, remove the first, and assert the second draft remains intact. Added rejects for missing-tab senders, sender/provider mismatch, and a draft exceeding the 250,000-character live limit; each rejected message must leave the valid session unchanged.
 
-The follow-up red test failed because the worker had no tab-close listener (`the worker must register tab-close cleanup`). After the fix, `node scripts/build.mjs` and `node scripts/verify-live-capture.mjs` both passed; the regression prints `live-capture-cycle-1=pass`.
+The follow-up red test failed because the worker had no tab-close listener (`the worker must register tab-close cleanup`). After the fix, `node scripts/build.mjs` and `node scripts/verify-live-capture.mjs` both passed; the regression prints `live-capture-regressions=pass`.
 
 ### Strong audit
 
@@ -88,6 +88,38 @@ Fresh build plus `node scripts/verify-live-capture.mjs` pass. The regression cov
 
 ---
 
-## Cycles 3–10
+## Cycle 3 — keyboard and form submission
+
+### Finding
+
+The content script listened only for clicks on the send button. Ordinary Enter and native form submits could bypass the capture state machine.
+
+### Red test
+
+`node scripts/verify-submission-flow.mjs` failed because `src/capture/submissionListeners.ts` did not exist. The regression specifies Enter, Shift+Enter, IME composition, native submit, click, duplicate signals, and no interference with native submission.
+
+### Implementation
+
+Added a shared submit-signal observer and wired it into the content script. It captures ordinary Enter in the active composer, native form submits containing the composer, and send-button clicks. It ignores Shift+Enter, IME composition/keyCode 229, unrelated targets, and empty drafts. It does not call `preventDefault`.
+
+### Strict audit
+
+The event regression passes all initial cases. Review found the 600 ms duplicate window also suppresses a legitimate repeat of the same prompt if the user clears and retypes it inside that interval. A prompt change should reset deduplication immediately.
+
+### Fix prompt
+
+See the cycle-3 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. It adds a same-text repeat after clear/retype and verifies that only repeated signals without intervening edits are deduplicated.
+
+### Follow-up implementation
+
+The event helper now resets its duplicate signature on composer input changes. The follow-up test first failed because clear/retype still counted as a duplicate (`1 !== 2`); after the fix it captures the identical repeated prompt as a new send while duplicate Enter/form/click signals remain one capture.
+
+### Strong audit
+
+`node scripts/verify-submission-flow.mjs` passes with four intended submissions, duplicate signals deduplicated, and zero `preventDefault` calls. A fresh build and `node scripts/verify-live-capture.mjs` pass. Code review confirms listeners filter to the active composer/form/send control, ignore Shift+Enter and IME composition, and call the same state machine used by click capture. The browser-based extension check remains blocked by runner `spawn UNKNOWN`; the event helper itself is exercised in a focused Node harness.
+
+---
+
+## Cycles 4–10
 
 Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.

@@ -11,3 +11,7 @@ Use this prompt with the current source tree and the latest entry in `docs/audit
 ## Cycle 2 follow-up prompt
 
 > The manager now stores one live session per tab, but strict review found that a negative integer tab id passes `Number.isInteger` and can enter the session map. Add a red regression proving the message boundary rejects `tab.id = -1`, and `SessionManager.setSession` rejects negative, non-safe-integer, and non-integer ids without changing existing sessions. Tighten the sender and manager validation, rebuild, rerun the complete focused live-capture regression, and record the strong audit evidence.
+
+## Cycle 3 follow-up prompt
+
+> Enter, native form submit, and click now share one capture path, but strict review found that the dedupe window can suppress a legitimate identical prompt after the user clears and retypes it quickly. Add a failing event regression for clear/retype of the same text, reset dedupe when composer input changes, and prove that duplicate send signals without an intervening edit still produce one capture. Rebuild, run the event and live-capture regressions, and record the strong audit evidence. Preserve Shift+Enter/IME handling and do not prevent the provider's default send action.

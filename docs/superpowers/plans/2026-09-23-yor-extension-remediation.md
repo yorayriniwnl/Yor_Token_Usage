@@ -54,7 +54,7 @@
 **Interfaces:** Consume the `LiveTabSession` stored by Task 1. `SessionManager` stores one current session per `tabId`; its provider filter verifies that the requested view matches the tab's current site. `setSession`, `getSession`, `getAllSessions`, and `removeTab` remain the public API.
 
 - [x] Add behavior checks for two ChatGPT tabs, latest-session ordering, and removal of a closed tab.
-- [x] Run the focused regression; expected baseline: a tab-only alias can point at another provider session and the worker does not remove tab state.
+- [x] Run the focused regression; expected baseline: the manager retains two site entries after the same tab changes provider.
 - [x] Keep one authoritative entry per tab, retain the provider in the session value, and wire `chrome.tabs.onRemoved` to `removeTab`.
 - [x] Rebuild and rerun the focused regression; expected: both tabs remain independent and removed tab state disappears.
 - [x] Strict-audit key matching and cleanup; record cycle 2.
@@ -63,17 +63,16 @@
 
 **Files:**
 - Modify: `src/content/index.ts`
-- Modify: `src/capture/stateMachine.ts`
 - Create: `src/capture/submissionListeners.ts`
-- Create or extend: `scripts/verify-live-capture.mjs`
+- Create: `scripts/verify-submission-flow.mjs`
 
 **Interfaces:** Produce one listener helper that calls the existing `CaptureStateMachine.onUserSubmit(text, model, threadId, visibleMessages)` callback for valid submissions.
 
-- [ ] Add event cases for Enter, Shift+Enter, IME composition, native form submit, click, and click-plus-submit duplication.
-- [ ] Run the regression; expected baseline: keyboard/form events are missed and duplicate signals can replace pending state.
-- [ ] Route all signals through one idempotent submit helper; leave browser-native submission behavior intact.
-- [ ] Rebuild and rerun; expected: intended sends are captured exactly once, while Shift+Enter and IME composition are ignored.
-- [ ] Strict-audit key modifiers, nested send-button targets, and repeated events; record cycle 3.
+- [x] Add event cases for Enter, Shift+Enter, IME composition, native form submit, click, and click-plus-submit duplication.
+- [x] Run the regression; expected baseline: keyboard/form events are missed and duplicate signals can replace pending state.
+- [x] Route all signals through one idempotent submit helper; leave browser-native submission behavior intact.
+- [x] Rebuild and rerun; expected: intended sends are captured exactly once, while Shift+Enter and IME composition are ignored.
+- [x] Strict-audit key modifiers, nested send-button targets, and repeated events; record cycle 3.
 
 ### Task 4: Wait for stable response completion
 
