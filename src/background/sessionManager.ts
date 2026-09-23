@@ -6,44 +6,26 @@ import type { LiveTabSession } from "../types/state.js";
  * maintain completely independent live drafting and context states.
  */
 export class SessionManager {
-  private sessions = new Map<string, LiveTabSession>();
-
-  private makeKey(tabId: number, site?: string): string {
-    return site ? `${tabId}:${site}` : `${tabId}`;
-  }
+  private sessions = new Map<number, LiveTabSession>();
 
   setSession(session: LiveTabSession): void {
-    const key = this.makeKey(session.tabId, session.site);
-    this.sessions.set(key, session);
-    // Also index by tabId alone for quick lookup by active tab
-    this.sessions.set(this.makeKey(session.tabId), session);
+    if (!Number.isSafeInteger(session.tabId) || session.tabId < 0) {
+      throw new RangeError("A live tab session requires a non-negative safe integer tab id");
+    }
+    this.sessions.set(session.tabId, session);
   }
 
   getSession(tabId: number, site?: string): LiveTabSession | undefined {
-    if (site) {
-      return this.sessions.get(this.makeKey(tabId, site));
-    }
-    return this.sessions.get(this.makeKey(tabId));
+    const session = this.sessions.get(tabId);
+    return session && (!site || session.site === site) ? session : undefined;
   }
 
   getAllSessions(): LiveTabSession[] {
-    // Return unique sessions by compound key
-    const unique = new Map<string, LiveTabSession>();
-    for (const [key, session] of this.sessions.entries()) {
-      if (key.includes(":")) {
-        unique.set(key, session);
-      }
-    }
-    return Array.from(unique.values()).sort((a, b) => b.lastUpdated - a.lastUpdated);
+    return Array.from(this.sessions.values()).sort((a, b) => b.lastUpdated - a.lastUpdated);
   }
 
   removeTab(tabId: number): void {
-    const prefix = `${tabId}`;
-    for (const key of Array.from(this.sessions.keys())) {
-      if (key === prefix || key.startsWith(`${prefix}:`)) {
-        this.sessions.delete(key);
-      }
-    }
+    this.sessions.delete(tabId);
   }
 
   clear(): void {

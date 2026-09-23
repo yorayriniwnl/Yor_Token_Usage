@@ -51,13 +51,13 @@
 - Modify: `src/background/service-worker.ts`
 - Create or extend: `scripts/verify-live-capture.mjs`
 
-**Interfaces:** Consume the `LiveTabSession` stored by Task 1. `SessionManager.setSession`, `getSession`, `getAllSessions`, and `removeTab` remain the public API.
+**Interfaces:** Consume the `LiveTabSession` stored by Task 1. `SessionManager` stores one current session per `tabId`; its provider filter verifies that the requested view matches the tab's current site. `setSession`, `getSession`, `getAllSessions`, and `removeTab` remain the public API.
 
-- [ ] Add behavior checks for two ChatGPT tabs, latest-session ordering, and removal of a closed tab.
-- [ ] Run the focused regression; expected baseline: a tab-only alias can point at another provider session and the worker does not remove tab state.
-- [ ] Keep one authoritative compound-key entry per session and wire `chrome.tabs.onRemoved` to `removeTab`.
-- [ ] Rebuild and rerun the focused regression; expected: both tabs remain independent and removed tab state disappears.
-- [ ] Strict-audit key matching and cleanup; record cycle 2.
+- [x] Add behavior checks for two ChatGPT tabs, latest-session ordering, and removal of a closed tab.
+- [x] Run the focused regression; expected baseline: a tab-only alias can point at another provider session and the worker does not remove tab state.
+- [x] Keep one authoritative entry per tab, retain the provider in the session value, and wire `chrome.tabs.onRemoved` to `removeTab`.
+- [x] Rebuild and rerun the focused regression; expected: both tabs remain independent and removed tab state disappears.
+- [x] Strict-audit key matching and cleanup; record cycle 2.
 
 ### Task 3: Capture Enter and form submissions once
 

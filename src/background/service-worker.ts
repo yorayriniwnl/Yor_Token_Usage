@@ -11,7 +11,7 @@ const MAX_LIVE_DRAFT_CHARS = 250_000;
 function getContentSenderContext(sender: chrome.runtime.MessageSender) {
   const tabId = sender.tab?.id;
   const senderUrl = sender.tab?.url ?? sender.url;
-  if (!Number.isInteger(tabId) || !senderUrl) return null;
+  if (!Number.isSafeInteger(tabId) || (tabId as number) < 0 || !senderUrl) return null;
 
   try {
     const adapter = getAdapterForUrl(new URL(senderUrl));

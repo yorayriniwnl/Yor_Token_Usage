@@ -7,3 +7,7 @@ Use this prompt with the current source tree and the latest entry in `docs/audit
 ## Cycle 1 follow-up prompt
 
 > The live observation protocol now works, but the strict audit found that closed tabs leave their live session in the service worker's in-memory manager. Add a regression that submits observations for two tabs, closes one tab through the registered `chrome.tabs.onRemoved` listener, and proves the closed tab no longer receives its session while the other tab remains intact. Also verify that a sender without a provider tab, a sender on a mismatched provider URL, and an oversized draft are rejected without mutating either session. Implement cleanup through `SessionManager.removeTab`, rebuild, run the focused regression, and record the strong audit result. Do not return a full storage snapshot from the content message path.
+
+## Cycle 2 follow-up prompt
+
+> The manager now stores one live session per tab, but strict review found that a negative integer tab id passes `Number.isInteger` and can enter the session map. Add a red regression proving the message boundary rejects `tab.id = -1`, and `SessionManager.setSession` rejects negative, non-safe-integer, and non-integer ids without changing existing sessions. Tighten the sender and manager validation, rebuild, rerun the complete focused live-capture regression, and record the strong audit evidence.

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { webcrypto } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 import vm from "node:vm";
 
 const extensionId = "abcdefghijklmnopabcdefghijklmnop";
@@ -135,4 +137,43 @@ const oversized = await dispatch({
 assert.equal(oversized?.ok, false, "oversized drafts must be rejected instead of retained in memory");
 const intactSecondTab = await dispatch({ type: "get-tab-view-state", site: "chatgpt", threadId: "thread-2" }, sender2);
 assert.equal(intactSecondTab?.session?.currentDraft, "Keep the second tab separate", "rejected messages must not corrupt a valid tab session");
-console.log("live-capture-cycle-1=pass");
+const negativeTab = await dispatch({
+  type: "submit-tab-observation",
+  site: "chatgpt",
+  threadId: "invalid-tab",
+  model: "GPT-4o",
+  draftText: "must not be stored",
+  draftAnalysis: {},
+  contextAccounting: {},
+  quotaSignal: null
+}, { ...sender2, tab: { ...sender2.tab, id: -1 } });
+assert.equal(negativeTab?.ok, false, "negative sender tab ids must be rejected");
+
+const managerBundle = await build({
+  entryPoints: [fileURLToPath(new URL("../src/background/sessionManager.ts", import.meta.url))],
+  bundle: true,
+  format: "cjs",
+  platform: "node",
+  write: false
+});
+const managerModule = { exports: {} };
+vm.runInNewContext(managerBundle.outputFiles[0].text, { module: managerModule, exports: managerModule.exports });
+const manager = new managerModule.exports.SessionManager();
+manager.setSession({ tabId: 51, site: "chatgpt", threadId: "chat", model: "GPT-4o", currentDraft: "old host", draftAnalysis: {}, contextAccounting: {}, quotaSignal: null, lastUpdated: 1 });
+manager.setSession({ tabId: 51, site: "claude", threadId: "claude-chat", model: "Claude", currentDraft: "current host", draftAnalysis: {}, contextAccounting: {}, quotaSignal: null, lastUpdated: 2 });
+assert.equal(manager.getAllSessions().length, 1, "a tab navigation must replace its old provider session");
+assert.equal(manager.getSession(51, "chatgpt"), undefined, "an old provider must not retrieve the navigated tab's prior draft");
+assert.equal(manager.getSession(51)?.currentDraft, "current host", "a tab-only lookup must return its current provider session");
+for (const invalidTabId of [-1, Number.NaN, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+  assert.throws(
+    () => manager.setSession({ tabId: invalidTabId, site: "chatgpt", threadId: "invalid", model: "GPT-4o", currentDraft: "bad", draftAnalysis: {}, contextAccounting: {}, quotaSignal: null, lastUpdated: 3 }),
+    (error) => error?.name === "RangeError",
+    `invalid tab id ${String(invalidTabId)} must be rejected`
+  );
+}
+assert.equal(manager.getAllSessions().length, 1, "rejected tab ids must not mutate the session collection");
+manager.setSession({ tabId: 52, site: "chatgpt", threadId: "newer", model: "GPT-4o", currentDraft: "newer tab", draftAnalysis: {}, contextAccounting: {}, quotaSignal: null, lastUpdated: 4 });
+assert.equal(manager.getAllSessions()[0]?.tabId, 52, "live sessions must be ordered newest first");
+manager.removeTab(52);
+assert.equal(manager.getAllSessions().length, 1, "removing a tab must leave unrelated sessions intact");
+console.log("live-capture-regressions=pass");

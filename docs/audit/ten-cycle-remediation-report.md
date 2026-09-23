@@ -56,6 +56,38 @@ The focused regression now exercises the real bundled service worker with mocked
 
 ---
 
-## Cycles 2–10
+## Cycle 2 — one live session per tab
+
+### Finding
+
+`SessionManager` stored both `tabId:site` and a tab-only alias. Navigating a tab to another provider left its previous provider session behind, and `getAllSessions()` surfaced both entries.
+
+### Red test
+
+The focused regression first failed with `a tab navigation must replace its old provider session` (`2 !== 1`).
+
+### Implementation
+
+Changed the manager to one session per numeric tab id. A session records its current provider; provider-filtered reads reject stale providers, and tab-close cleanup removes the one entry.
+
+### Strict audit
+
+After a fresh build, the navigation and close-isolation cases passed. Strict boundary review found that `Number.isInteger(-1)` is true and `SessionManager.setSession` had no runtime id validation. A malformed negative Chrome-tab id could therefore create a live session under an invalid key.
+
+### Fix prompt
+
+See the cycle-2 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. It asks for negative, non-safe-integer, and missing-tab cases to be rejected without mutating current sessions.
+
+### Follow-up implementation
+
+Added non-negative safe-integer validation at both the sender boundary and `SessionManager.setSession`. The new red case failed because a negative sender tab id was accepted (`true !== false`). Direct manager tests also reject `-1`, `NaN`, fractional ids, and values above `Number.MAX_SAFE_INTEGER`; rejected ids leave the collection unchanged.
+
+### Strong audit
+
+Fresh build plus `node scripts/verify-live-capture.mjs` pass. The regression covers same-tab provider navigation, per-tab lookup, newest-first ordering, close cleanup, unrelated-tab preservation, missing and mismatched senders, over-limit drafts, and invalid ids. Each rejection leaves valid session state intact. `git diff --check` passes. The manager now stores one object per tab and never retains the previous provider draft after navigation.
+
+---
+
+## Cycles 3–10
 
 Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.
