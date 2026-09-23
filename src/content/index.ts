@@ -389,6 +389,7 @@ async function init() {
       } catch {
         copyShorterStatus.textContent = shorter ? "Could not copy shorter prompt." : "No shorter version available.";
       }
+      positionOverlay();
       return;
     }
     const toggleBtn = target?.closest('[data-action="toggle"]');

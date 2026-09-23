@@ -349,3 +349,26 @@ Added `chrome.tabs.onRemoved.addListener` to the stress fixture and added opt-in
 ### Strong audit
 
 `node scripts/verify-regression-integration.mjs` passes after first failing on the missing package command and later on the capture fixture's missing executable option. `node scripts/verify-extension-regressions.mjs` passes all 15 checks, including seven stress scenarios and 10,026 passing assertions. `node node_modules/typescript/bin/tsc --noEmit --pretty false`, `node scripts/build.mjs` (eight entry points), `node scripts/check-design.mjs`, `node scripts/benchmark-accuracy.mjs`, `node scripts/verify-overlay-browser.cjs` in installed Microsoft Edge, and `node scripts/verify-capture-browser.cjs` in installed Microsoft Edge pass. The browser pages were controlled Claude-shaped fixtures, not signed-in provider sessions. `scripts/verify-extension.ps1` passes typecheck, build, the integrated regressions, package creation, and byte-for-byte reproducibility; both runs produced SHA-256 `2A05AC57575F60A19B4C8CE88CF28F33AAAD4FEB8D3AFECE050330694EFD7D2B` for a 1,708,143-byte ZIP. This host has no npm executable, so the verifier was run with a temporary PowerShell function mapping its two npm commands to the same checked-in Node commands. The Ubuntu `pwsh`/Chromium CI path and backend PostgreSQL/Redis suite remain unobserved locally. A read-only review of `75328e0..72608a5` found no Critical, Important, or Minor findings and approved the change; it did not rerun checks. Browser fixtures remain separate CI checks rather than part of the PowerShell package verifier and were run separately as noted. `git diff --check` is rerun after this report update.
+
+---
+
+## Post-cycle runtime verification follow-up — 2026-09-23
+
+### Browser finding and fix
+
+A fresh Edge run showed that the copy-shorter test read its live status immediately after clicking, before the asynchronous clipboard promise settled. Waiting for the status exposed a second defect: writing feedback inside the extension shadow root did not trigger the page-body mutation observer, so the expanded card kept its old top coordinate and overlapped the composer. The browser regression now waits for both success and no-shorter outcomes and checks the card/composer geometry after each. The copy handler recalculates the overlay position after setting feedback.
+
+The regression failed before the fix with the card at y=466, height=160 and the composer starting at y=550 (76 px overlap). It passes after the fix in Microsoft Edge with reduced and normal motion. The capture browser suite also passes all eight capture scenarios and dashboard assertions.
+
+### Windows formatter finding and fix
+
+The Windows checkout had core.autocrlf=true and no Prisma line-ending attribute. That converted backend/prisma/schema.prisma to CRLF, making Prisma 5.22 format --check fail although an LF copy formatted identically. .gitattributes now keeps Prisma schemas as LF so the release check is stable on Windows and Linux.
+
+### Fresh verification
+
+- Extension typecheck and eight-bundle build pass.
+- The regression gate passes all 15 checks; adversarial stress passes seven scenarios and 10,026 assertions.
+- Overlay browser checks pass with reduced and normal motion; capture browser checks pass in installed Edge against the controlled Claude-like fixture.
+- The PowerShell release verifier passes its typecheck, build, regression, packaging, and reproducibility stages. Package SHA-256: B5E51C0A1356FB488A1145DEF1CB3025AE69E68F94293FF9263972A791ACE61F.
+- Backend npm run verify passes Prisma validation, formatting, client generation, TypeScript build, and 42 unit tests. npm audit --audit-level=high reports zero vulnerabilities.
+- The database integration stack is not available on this host: Docker is absent and local PostgreSQL/Redis ports are closed. A GitHub Actions run is still needed to verify that integration path.
