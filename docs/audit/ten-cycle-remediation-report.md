@@ -371,4 +371,24 @@ The Windows checkout had core.autocrlf=true and no Prisma line-ending attribute.
 - Overlay browser checks pass with reduced and normal motion; capture browser checks pass in installed Edge against the controlled Claude-like fixture.
 - The PowerShell release verifier passes its typecheck, build, regression, packaging, and reproducibility stages. Package SHA-256: B5E51C0A1356FB488A1145DEF1CB3025AE69E68F94293FF9263972A791ACE61F.
 - Backend npm run verify passes Prisma validation, formatting, client generation, TypeScript build, and 42 unit tests. npm audit --audit-level=high reports zero vulnerabilities.
-- The database integration stack is not available on this host: Docker is absent and local PostgreSQL/Redis ports are closed. A GitHub Actions run is still needed to verify that integration path.
+- The database integration stack is not available on this host: Docker is absent and local PostgreSQL/Redis ports are closed. GitHub Actions run #31 passed migrations, seed, integration tests, image build, and all extension checks; its image vulnerability step failed on Debian 12 operating-system packages. Run #32 passed the same build and integration path plus all extension checks, then identified remaining high advisories in the Debian 13 runtime packages (recorded below).
+
+---
+
+## Post-cycle backend image security follow-up — 2026-09-23
+
+### Strict audit finding
+
+Run #31 showed that the pinned Debian 12 Node and distroless bases carried multiple high and critical operating-system advisories. Switching both stages to digest-pinned Debian 13 images produced a successful image build and preserved the backend integration path, but run #32 still failed the blanket `--fail-on high` scan. The scan listed `zlib1g` CVE-2026-85091 and `libc6` CVE-2026-19499 and CVE-2026-5435. Debian’s security tracker currently marks these Debian 13 packages vulnerable without a fixed Trixie package version. These remain real disclosed vulnerabilities; the absence of a vendor fix is not evidence that the application is unaffected.
+
+### Fix prompt
+
+Keep a full high/critical image scan visible in CI. Separate reporting from the blocking gate: fail on high or critical findings that have an available package fix, and preserve the complete scan output so no-fix advisories stay visible for follow-up. Do not claim those advisories are remediated. Re-run the entire backend and extension workflow after changing the scanner policy, then record exact run evidence.
+
+### Implementation under audit
+
+The workflow now runs a non-blocking full image scan followed by a blocking scan restricted to findings with an available fix. Both use the pinned Anchore action and keep the high severity cutoff. The Debian 13 image base change is retained because it removed the prior critical OpenSSL finding and reduced the scan results. The outstanding Trixie advisories remain in this report rather than being described as fixed.
+
+### Strong audit status
+
+Pending a fresh full GitHub Actions run. Local `git diff --check` is the only available check for the workflow edit; this host has no Docker engine. The previous run proves the unchanged backend verify, migration, seed, integration, image build, and extension jobs still pass after the Debian 13 switch.
