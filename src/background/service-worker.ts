@@ -2,8 +2,26 @@ import { SITE_LABELS } from '../lib/constants.js';
 import { formatTokens, formatPercent } from '../lib/format.js';
 import { usageEventIdentity, isTrackingEnabled, buildSnapshot, getState, updateState, savePreferences, saveSession, recordUsageEvent, exportState, importState, clearLocalHistory } from '../storage/store.js';
 import { assertInternalExtensionSender, syncCloudState, getCloudStatus, connectCloudSession, disconnectCloudSession, recordCloudSyncFailure } from '../cloud/cloudSync.js';
+import { getAdapterForUrl } from '../adapters/index.js';
+import { sessionManager } from './sessionManager.js';
 
 export var ALARM_NAME = "yor-token-usage-refresh";
+const MAX_LIVE_DRAFT_CHARS = 250_000;
+
+function getContentSenderContext(sender: chrome.runtime.MessageSender) {
+  const tabId = sender.tab?.id;
+  const senderUrl = sender.tab?.url ?? sender.url;
+  if (!Number.isInteger(tabId) || !senderUrl) return null;
+
+  try {
+    const adapter = getAdapterForUrl(new URL(senderUrl));
+    if (!adapter) return null;
+    return { tabId: tabId as number, site: adapter.site };
+  } catch {
+    return null;
+  }
+}
+
 export async function ensureState() {
     // @ts-ignore
   return updateState(async (state: any) => state);
@@ -115,6 +133,11 @@ export async function notifyIfNeededFromEvent(event: any) {
     });
   }
 }
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  sessionManager.removeTab(tabId);
+});
+
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureState();
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: 5 });
@@ -157,6 +180,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   void (async () => {
     try {
       switch (message?.type) {
+        case "submit-tab-observation": {
+          const context = getContentSenderContext(sender);
+          if (!context || context.site !== message.site) {
+            sendResponse({ ok: false, error: "Observation sender does not match a supported provider tab" });
+            break;
+          }
+          if (typeof message.draftText !== "string" || message.draftText.length > MAX_LIVE_DRAFT_CHARS) {
+            sendResponse({ ok: false, error: "Draft is invalid or exceeds the live capture limit" });
+            break;
+          }
+
+          sessionManager.setSession({
+            tabId: context.tabId,
+            site: context.site,
+            threadId: typeof message.threadId === "string" ? message.threadId.slice(0, 512) : "",
+            model: typeof message.model === "string" ? message.model.slice(0, 256) : "unknown",
+            currentDraft: message.draftText,
+            draftAnalysis: message.draftAnalysis,
+            contextAccounting: message.contextAccounting,
+            quotaSignal: message.quotaSignal ?? null,
+            lastUpdated: Date.now()
+          });
+          sendResponse({ ok: true });
+          break;
+        }
+        case "get-tab-view-state": {
+          const context = getContentSenderContext(sender);
+          if (!context || context.site !== message.site) {
+            sendResponse({ ok: false, error: "Tab view sender does not match a supported provider tab" });
+            break;
+          }
+
+          const state = await getState();
+          const sitePreference = state.preferences.sites[context.site];
+          const session = sessionManager.getSession(context.tabId, context.site);
+          sendResponse({
+            ok: true,
+            siteEnabled: sitePreference.enabled,
+            preferences: {
+              showOverlay: state.preferences.showOverlay,
+              theme: state.preferences.theme,
+              anchorPosition: state.preferences.anchorPosition
+            },
+            sitePreference,
+            session: session && (!message.threadId || session.threadId === message.threadId) ? session : undefined
+          });
+          break;
+        }
         case "capture-session": {
           const { state, session } = await saveSession(message.payload ?? message.session);
           await updateBadge(session);

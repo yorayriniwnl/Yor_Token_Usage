@@ -1,5 +1,5 @@
 import type { ProviderId } from "./models.js";
-import type { LiveTabSession, UsageEventRecord, UserPreferences } from "./state.js";
+import type { LiveTabSession, SitePreference, UsageEventRecord, UserPreferences } from "./state.js";
 import type { DraftAnalysis, ThreadContextAccounting } from "./tokens.js";
 import type { ObservedQuotaSignal } from "./adapters.js";
 
@@ -70,5 +70,6 @@ export interface TabViewStateResponse {
   ok: boolean;
   siteEnabled: boolean;
   preferences: Pick<UserPreferences, "showOverlay" | "theme" | "anchorPosition">;
+  sitePreference: SitePreference;
   session?: LiveTabSession;
 }
