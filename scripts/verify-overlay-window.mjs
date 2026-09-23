@@ -26,6 +26,19 @@ const abovePosition = getOverlayPosition(
 );
 assert.deepEqual(abovePosition, { left: 100, top: 652, placement: "above" });
 
+const avoidsFloatingMeters = getOverlayPosition(
+  { left: 100, top: 400, right: 500, bottom: 440, width: 400, height: 40 },
+  { width: 1280, height: 800 },
+  { width: 250, height: 44 },
+  {
+    obstacles: [
+      { left: 95, right: 150, top: 448, bottom: 492, width: 55, height: 44 },
+      { left: 95, right: 150, top: 348, bottom: 392, width: 55, height: 44 }
+    ]
+  }
+);
+assert.deepEqual(avoidsFloatingMeters, { left: 250, top: 448, placement: "below" });
+
 const positionedElement = { style: {}, dataset: {} };
 const appliedPosition = applyOverlayPosition(
   positionedElement,

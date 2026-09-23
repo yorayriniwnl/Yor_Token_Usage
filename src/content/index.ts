@@ -1,7 +1,7 @@
 import { getAdapterForUrl } from "../adapters/index.js";
 import { CaptureStateMachine, type CommittedExchange } from "../capture/stateMachine.js";
 import { observeUserSubmissions } from "../capture/submissionListeners.js";
-import { applyOverlayPosition } from "../overlay/overlay-position.js";
+import { applyOverlayPosition, type RectLike } from "../overlay/overlay-position.js";
 import { isOverlayInitiallyVisible } from "./overlayVisibility.js";
 import { estimateVisibleContext } from "./contextEstimate.js";
 import { getCopyShorterCandidate } from "../optimizer/safeOptimizer.js";
@@ -342,6 +342,63 @@ async function init() {
   const meterPercent = shadow.querySelector('[data-ref="meterPercent"]') as HTMLElement;
   const meterReset = shadow.querySelector('[data-ref="meterReset"]') as HTMLElement;
   const copyShorterStatus = shadow.querySelector('[data-ref="copyShorterStatus"]') as HTMLElement;
+  let floatingObstacleCache: RectLike[] = [];
+  let floatingObstacleCacheAt = -Infinity;
+
+  function findFloatingOverlayObstacles(): RectLike[] {
+    const now = performance.now();
+    if (now - floatingObstacleCacheAt < 250) return floatingObstacleCache;
+
+    const obstacles: RectLike[] = [];
+    const roots: ParentNode[] = [document];
+    const visitedRoots = new Set<ParentNode>();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    while (roots.length) {
+      const root = roots.pop()!;
+      if (visitedRoots.has(root)) continue;
+      visitedRoots.add(root);
+
+      for (const element of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+        if (element === container) continue;
+        if (element.shadowRoot) roots.push(element.shadowRoot);
+
+        const style = getComputedStyle(element);
+        const isPositionedOverlay = style.position === "fixed" || style.position === "sticky" ||
+          (style.position === "absolute" && style.zIndex !== "auto");
+        if (!isPositionedOverlay || style.display === "none" || style.visibility === "hidden" || Number(style.opacity) <= 0.01) {
+          continue;
+        }
+
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.bottom <= 0 ||
+            rect.left >= viewportWidth || rect.top >= viewportHeight) {
+          continue;
+        }
+        const isFullViewportShadowHost = Boolean(element.shadowRoot) &&
+          rect.width >= viewportWidth * 0.9 && rect.height >= viewportHeight * 0.9;
+        if (isFullViewportShadowHost) continue;
+
+        obstacles.push({
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    }
+
+    floatingObstacleCache = obstacles;
+    floatingObstacleCacheAt = now;
+    return floatingObstacleCache;
+  }
+
+  function invalidateFloatingObstacleCache() {
+    floatingObstacleCacheAt = -Infinity;
+  }
 
   function positionOverlay() {
     if (!overlayVisible) return;
@@ -361,7 +418,7 @@ async function init() {
       applyOverlayPosition(pageMeter, anchorRect, viewportRect, {
         width: meterRect.width || 250,
         height: meterRect.height || 44
-      });
+      }, { obstacles: findFloatingOverlayObstacles() });
     } else {
       pageMeter.style.display = "none";
       card.classList.add("yor-open");
@@ -372,7 +429,7 @@ async function init() {
       applyOverlayPosition(card, anchorRect, viewportRect, {
         width: cardRect.width || Math.min(320, maxWidth),
         height: cardRect.height || 140
-      });
+      }, { obstacles: findFloatingOverlayObstacles() });
     }
   }
 
@@ -511,7 +568,12 @@ async function init() {
   });
 
   // MutationObserver for DOM changes
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((mutations) => {
+    if (mutations.some((mutation) => mutation.type === "attributes" ||
+      Array.from(mutation.addedNodes).some((node) => node.nodeType === Node.ELEMENT_NODE) ||
+      Array.from(mutation.removedNodes).some((node) => node.nodeType === Node.ELEMENT_NODE))) {
+      invalidateFloatingObstacleCache();
+    }
     const visibleMessages = activeAdapter.collectVisibleMessages();
     const quota = activeAdapter.getQuotaSignals();
     stateMachine.onDomUpdate(document.body, new URL(window.location.href), visibleMessages, quota);
@@ -520,8 +582,14 @@ async function init() {
 
   observer.observe(document.body, { childList: true, subtree: true });
 
-  window.addEventListener("resize", () => positionOverlay());
-  window.addEventListener("scroll", () => positionOverlay(), true);
+  window.addEventListener("resize", () => {
+    invalidateFloatingObstacleCache();
+    positionOverlay();
+  });
+  window.addEventListener("scroll", () => {
+    invalidateFloatingObstacleCache();
+    positionOverlay();
+  }, true);
 
   // Background message listener (e.g. toggle-overlay)
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {

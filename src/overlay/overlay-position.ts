@@ -10,6 +10,7 @@ export interface RectLike {
 export interface PositionOptions {
   padding?: number;
   gap?: number;
+  obstacles?: RectLike[];
 }
 
 export interface OverlayPositionResult {
@@ -29,6 +30,26 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function overlapsObstacle(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  obstacle: RectLike,
+  gap: number
+): boolean {
+  const obstacleLeft = finite(obstacle?.left, 0);
+  const obstacleTop = finite(obstacle?.top, 0);
+  const obstacleWidth = Math.max(0, finite(obstacle?.width, 0));
+  const obstacleHeight = Math.max(0, finite(obstacle?.height, 0));
+  if (!obstacleWidth || !obstacleHeight) return false;
+
+  const obstacleRight = finite(obstacle?.right, obstacleLeft + obstacleWidth);
+  const obstacleBottom = finite(obstacle?.bottom, obstacleTop + obstacleHeight);
+  return left < obstacleRight + gap && left + width > obstacleLeft - gap &&
+    top < obstacleBottom + gap && top + height > obstacleTop - gap;
+}
+
 export function getOverlayPosition(
   anchor: RectLike,
   viewport: { width: number; height: number },
@@ -41,19 +62,35 @@ export function getOverlayPosition(
   const height = Math.max(0, finite(overlay?.height, 0));
   const viewportWidth = Math.max(0, finite(viewport?.width, 0));
   const viewportHeight = Math.max(0, finite(viewport?.height, 0));
-  const left = clamp(finite(anchor?.left, padding), padding, Math.max(padding, viewportWidth - width - padding));
+  const maxLeft = Math.max(padding, viewportWidth - width - padding);
+  const left = clamp(finite(anchor?.left, padding), padding, maxLeft);
+  const anchorRight = finite(anchor?.right, finite(anchor?.left, padding) + finite(anchor?.width, 0));
+  const leftCandidates = [
+    left,
+    clamp(anchorRight - width, padding, maxLeft),
+    padding,
+    maxLeft
+  ].filter((candidate, index, candidates) => candidates.findIndex((other) => Math.abs(other - candidate) < 1) === index);
   const belowTop = finite(anchor?.bottom, padding) + gap;
   const aboveTop = finite(anchor?.top, padding) - gap - height;
   const anchorVisible = anchor?.bottom > 0 && anchor?.top < viewportHeight;
   const fitsWidth = width <= viewportWidth - padding * 2;
   const fitsBelow = anchorVisible && fitsWidth && belowTop >= padding && belowTop + height <= viewportHeight - padding;
   const fitsAbove = anchorVisible && fitsWidth && aboveTop >= padding && aboveTop + height <= viewportHeight - padding;
+  const verticalCandidates = [
+    { top: belowTop, placement: "below" as const, fits: fitsBelow },
+    { top: aboveTop, placement: "above" as const, fits: fitsAbove }
+  ].filter((candidate) => candidate.fits);
 
-  if (fitsBelow) {
-    return { left, top: belowTop, placement: "below" };
-  }
-  if (fitsAbove) {
-    return { left, top: aboveTop, placement: "above" };
+  for (const candidateLeft of leftCandidates) {
+    for (const candidate of verticalCandidates) {
+      const blocked = (options.obstacles || []).some((obstacle) =>
+        overlapsObstacle(candidateLeft, candidate.top, width, height, obstacle, 4)
+      );
+      if (!blocked) {
+        return { left: candidateLeft, top: candidate.top, placement: candidate.placement };
+      }
+    }
   }
   return {
     left,
@@ -91,6 +128,5 @@ declare const module: any;
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { applyOverlayPosition, getOverlayPosition };
 }
-
 
 

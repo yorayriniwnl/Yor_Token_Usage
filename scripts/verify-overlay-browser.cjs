@@ -58,6 +58,31 @@ const { chromium } = require('playwright');
       assert.ok(widget.x >= 0 && widget.y >= 0 && widget.x + widget.width <= viewport.width && widget.y + widget.height <= viewport.height, `${name} exceeds viewport`);
     };
     await nonOverlap('pageMeter');
+    const competingMeter = await page.evaluate(() => {
+      const root = document.querySelector('.yor-token-usage-root');
+      const yorMeter = root.shadowRoot.querySelector('[data-ref="pageMeter"]');
+      const rect = yorMeter.getBoundingClientRect();
+      const otherMeter = document.createElement('div');
+      otherMeter.id = 'other-extension-meter';
+      Object.assign(otherMeter.style, {
+        position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
+        width: `${rect.width}px`, height: `${rect.height}px`,
+        zIndex: '2147483646', background: '#38383a', pointerEvents: 'auto'
+      });
+      document.body.append(otherMeter);
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const meterAfterCollision = await ref('pageMeter').boundingBox();
+    const collision = meterAfterCollision &&
+      meterAfterCollision.x < competingMeter.x + competingMeter.width &&
+      meterAfterCollision.x + meterAfterCollision.width > competingMeter.x &&
+      meterAfterCollision.y < competingMeter.y + competingMeter.height &&
+      meterAfterCollision.y + meterAfterCollision.height > competingMeter.y;
+    assert.equal(collision, false, `Yor meter overlaps another extension: ${JSON.stringify({ competingMeter, meterAfterCollision })}`);
+    await page.locator('#other-extension-meter').evaluate(node => node.remove());
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
     const initialTokens = await ref('meterTokens').innerText();
     await page.locator('[contenteditable]').fill('A new draft that should increase the visible token estimate without claiming any provider credits.');
     await page.waitForFunction(initial => document.querySelector('.yor-token-usage-root').shadowRoot.querySelector('[data-ref="meterTokens"]').textContent !== initial, initialTokens);
