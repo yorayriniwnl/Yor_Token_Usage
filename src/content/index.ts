@@ -4,6 +4,8 @@ import { observeUserSubmissions } from "../capture/submissionListeners.js";
 import { applyOverlayPosition } from "../overlay/overlay-position.js";
 import { isOverlayInitiallyVisible } from "./overlayVisibility.js";
 import { estimateVisibleContext } from "./contextEstimate.js";
+import { getCopyShorterCandidate } from "../optimizer/safeOptimizer.js";
+import { writeTextToClipboard } from "../shared/clipboard.js";
 import { parseQuotaHintsFromText } from "../adapters/base.js";
 import { debounce } from "../shared/utils.js";
 import type { TabViewStateResponse, UsageEventCommitResponse } from "../types/messages.js";
@@ -327,6 +329,7 @@ async function init() {
       <div style="display: flex; gap: 8px;">
         <button data-ref="copyShorterButton">Copy shorter</button>
       </div>
+      <span data-ref="copyShorterStatus" aria-live="polite"></span>
     </div>
   `;
   shadow.append(wrapper);
@@ -338,6 +341,7 @@ async function init() {
   const meterTokens = shadow.querySelector('[data-ref="meterTokens"]') as HTMLElement;
   const meterPercent = shadow.querySelector('[data-ref="meterPercent"]') as HTMLElement;
   const meterReset = shadow.querySelector('[data-ref="meterReset"]') as HTMLElement;
+  const copyShorterStatus = shadow.querySelector('[data-ref="copyShorterStatus"]') as HTMLElement;
 
   function positionOverlay() {
     if (!overlayVisible) return;
@@ -372,8 +376,21 @@ async function init() {
     }
   }
 
-  shadow.addEventListener("click", (event) => {
+  shadow.addEventListener("click", async (event) => {
     const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-ref="copyShorterButton"]')) {
+      const composer = activeAdapter.findComposer();
+      const draft = composer ? activeAdapter.readComposerText(composer) : "";
+      const shorter = getCopyShorterCandidate(draft);
+      try {
+        if (!shorter) throw new Error("No shorter version is available.");
+        await writeTextToClipboard(shorter);
+        copyShorterStatus.textContent = "Shorter prompt copied; original unchanged.";
+      } catch {
+        copyShorterStatus.textContent = shorter ? "Could not copy shorter prompt." : "No shorter version available.";
+      }
+      return;
+    }
     const toggleBtn = target?.closest('[data-action="toggle"]');
     if (toggleBtn) {
       collapsed = !collapsed;

@@ -224,6 +224,38 @@ The strict follow-up regressions now pass for both installed encodings against t
 
 ---
 
-## Cycles 7–10
+## Cycle 7 — copy-shorter controls
+
+### Finding
+
+The page overlay exposed a `Copy shorter` button without a click action. The popup's similarly named button copied `currentDraft` verbatim, and the optimizer module was not connected to either control.
+
+### Red test
+
+`node scripts/verify-copy-shorter.mjs` first failed because `getCopyShorterCandidate` did not exist. After the first-pass wiring, it produced a shorter string but failed the fenced-code preservation assertion: the selected optimizer candidate collapsed code indentation and removed an identical repeated code line.
+
+### Implementation
+
+Added a helper that chooses the shortest generated suggestion and wired it into both the page overlay and popup. The overlay copies from the current composer and leaves the composer untouched; the popup now copies a generated candidate instead of the unchanged draft.
+
+### Strict audit
+
+The helper's initial “shortest suggestion” policy treated every optimizer suggestion as suitable for a one-click copy. It could mutate fenced code (indentation and repeated source lines), strip trailing spaces that encode Markdown hard line breaks, and copy speculative phrase rewrites such as “for the purpose of” → “for” without showing a preview. `deduplicateLines` also scanned through code fences. Both UIs relied solely on `navigator.clipboard.writeText`; the overlay reported failure but had no fallback for content-script clipboard restrictions.
+
+### Fix prompt
+
+See the cycle-7 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. Limit one-click candidates to formatting changes that preserve code blocks and Markdown hard breaks; do not select speculative wording or duplicate-removal rewrites. Keep standalone optimizer suggestions from editing code blocks and mark meaning-changing suggestions as non-preserving. Add a shared clipboard helper with a tested fallback, keep the source composer unchanged, and show useful copied/no-candidate/error feedback in both controls.
+
+### Follow-up implementation
+
+Restricted the copy candidate to line-ending normalization and excess blank-line cleanup; it no longer chooses deduplication or wording suggestions. Cleanup now preserves fenced code, blockquoted fenced code, and indented Markdown code, including duplicate source lines, indentation, blank lines, and line endings. Standalone deduplication and wording suggestions skip those code forms and no longer claim semantic preservation. Added a shared clipboard writer with `navigator.clipboard.writeText` plus a synchronous `execCommand` fallback. Both controls use it, leave the prompt unchanged, and report copied, no-candidate, and copy-failure states distinctly. Added a `YOR_CHROME_PATH` override to the browser harness so the installed Edge browser can run the extension test when Playwright's bundled Chromium is absent.
+
+### Strong audit
+
+`node scripts/verify-copy-shorter.mjs` passes checks for shorter candidate generation, fenced/blockquote/indented code preservation, CRLF preservation, Markdown hard-break spaces, no speculative wording changes, reviewed semantic suggestions, composer immutability, Clipboard API success, fallback success, and truthful failure. The first strong-audit expansion failed on four-space indented code and then on blockquoted fenced code; the parser was extended for both and the focused check passed afterward. `node scripts/verify-overlay-browser.cjs` passes in installed Microsoft Edge with the real unpacked extension and a controlled Claude-shaped fixture: the page-meter/card layout stays in bounds, the button copies the shortened text, the composer remains unchanged, and the no-candidate message appears. `node node_modules/typescript/bin/tsc --noEmit --pretty false`, `node scripts/build.mjs`, capture-state, live-capture, submission-flow, overlay-window, and `git diff --check` pass. The bundled Playwright Chromium executable is absent and installed Chrome did not load the extension in this runner; the Edge run supplied the browser-level verification.
+
+---
+
+## Cycles 8–10
 
 Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.

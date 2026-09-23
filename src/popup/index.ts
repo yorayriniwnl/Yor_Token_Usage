@@ -1,5 +1,7 @@
 import type { UserPreferences, SitePreference, ResetRule, } from '../types/state.js';
 import type { ProviderId } from '../types/models.js';
+import { getCopyShorterCandidate } from '../optimizer/safeOptimizer.js';
+import { writeTextToClipboard } from '../shared/clipboard.js';
 
 // src/lib/constants.ts
 var SITE_LABELS: Record<ProviderId | "generic", string> = {
@@ -234,7 +236,7 @@ function applyPresentation(preferences: any) {
   document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
   document.documentElement.classList.toggle("compact", preferences.compactMode === true);
 }
-async function runButtonAction(button: HTMLElement, task: () => Promise<void>, doneLabel: string = "Done") {
+async function runButtonAction(button: HTMLElement, task: () => Promise<void>, doneLabel: string = "Done", failureLabel: string = "Failed") {
   const originalLabel = button.textContent;
   button.classList.add("is-busy");
   try {
@@ -244,7 +246,7 @@ async function runButtonAction(button: HTMLElement, task: () => Promise<void>, d
     button.textContent = doneLabel;
   } catch {
     button.classList.remove("is-busy");
-    button.textContent = "Failed";
+    button.textContent = failureLabel;
   } finally {
     setTimeout(() => {
       button.classList.remove("is-confirmed", "is-busy");
@@ -382,10 +384,17 @@ Reset: ${session.quotaSignal?.resetAt ? formatClock(session.quotaSignal.resetAt)
     }, "Copied");
   };
   (document.querySelector("#copy-shorter-btn") as HTMLElement)!.onclick = async (event: Event) => {
-    await runButtonAction(event.currentTarget as HTMLElement, async () => {
-      const shorter = snapshot.currentSession?.currentDraft;
-      await navigator.clipboard.writeText(shorter || "");
-    }, "Copied");
+    const button = event.currentTarget as HTMLElement;
+    const shorter = getCopyShorterCandidate(snapshot.currentSession?.currentDraft ?? "");
+    if (!shorter) {
+      const originalLabel = button.textContent;
+      button.textContent = "No shorter version";
+      setTimeout(() => { button.textContent = originalLabel; }, 900);
+      return;
+    }
+    await runButtonAction(button, async () => {
+      await writeTextToClipboard(shorter);
+    }, "Copied shorter", "Copy failed");
   };
   (document.querySelector("#dashboard-btn") as HTMLElement)!.onclick = async (event: Event) => {
     await runButtonAction(event.currentTarget as HTMLElement, async () => {

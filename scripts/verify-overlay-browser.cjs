@@ -9,10 +9,16 @@ const { chromium } = require('playwright');
 (async () => {
   const root = path.resolve(__dirname, '..');
   const profile = await mkdtemp(path.join(tmpdir(), 'yor-overlay-regression-'));
-  const context = await chromium.launchPersistentContext(profile, {
-    headless: true, channel: 'chromium', viewport: { width: 1047, height: 760 }, reducedMotion: process.env.YOR_TEST_MOTION === 'normal' ? 'no-preference' : 'reduce',
+  const browserOptions = {
+    headless: process.env.YOR_TEST_HEADLESS !== 'false', channel: 'chromium', viewport: { width: 1047, height: 760 }, reducedMotion: process.env.YOR_TEST_MOTION === 'normal' ? 'no-preference' : 'reduce',
     args: [`--disable-extensions-except=${root}`, `--load-extension=${root}`]
-  });
+  };
+  if (process.env.YOR_CHROME_PATH) {
+    delete browserOptions.channel;
+    browserOptions.executablePath = process.env.YOR_CHROME_PATH;
+  }
+  const context = await chromium.launchPersistentContext(profile, browserOptions);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://claude.ai' });
   const errors = [];
   try {
     const page = await context.newPage();
@@ -32,6 +38,8 @@ const { chromium } = require('playwright');
       <footer><span>Session estimate</span><span>Reset in: 2h 32m · Messages left: 1595.4</span><button aria-label="Send">Send</button></footer></form>
       </main></body></html>` }));
     await page.goto('https://claude.ai/chat/yor-regression');
+    console.log(`extension-workers=${context.serviceWorkers().map(worker => worker.url()).join(',') || 'none'}`);
+    if (errors.length) console.log(`page-errors=${errors.join(' | ')}`);
     const ref = name => page.locator(`[data-ref="${name}"]`);
     await ref('pageMeter').waitFor({ state: 'visible' });
     assert.equal(await ref('meterPercent').innerText(), 'Unknown');
@@ -58,6 +66,17 @@ const { chromium } = require('playwright');
     await nonOverlap('card');
     await ref('copyShorterButton').scrollIntoViewIfNeeded();
     assert.ok(await ref('copyShorterButton').isVisible(), 'expanded panel actions must be reachable');
+    const sourceDraft = 'First line.\n\n\n\nSecond line.';
+    await page.locator('[contenteditable]').fill(sourceDraft);
+    const composerBeforeCopy = await page.locator('[contenteditable]').innerText();
+    await ref('copyShorterButton').click();
+    assert.equal(await ref('copyShorterStatus').innerText(), 'Shorter prompt copied; original unchanged.');
+    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+    assert.equal(clipboardText.replace(/\r\n/g, '\n'), 'First line.\n\n\nSecond line.');
+    assert.equal(await page.locator('[contenteditable]').innerText(), composerBeforeCopy, 'copying must not modify the composer');
+    await page.locator('[contenteditable]').fill('One line with no redundant whitespace.');
+    await ref('copyShorterButton').click();
+    assert.equal(await ref('copyShorterStatus').innerText(), 'No shorter version available.');
     await ref('toggleButton').scrollIntoViewIfNeeded();
     assert.match(await ref('quickCost').innerText(), /unavailable/);
     await page.screenshot({ path: path.join(profile, 'overlay-details.png') });
