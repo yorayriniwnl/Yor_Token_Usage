@@ -1,4 +1,4 @@
-FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS base
+FROM node:22.23-trixie-slim@sha256:c5849ff9c9ebcd66615412f0b548ca5b8ecaef84003dc9ac2e077ebe46aaa3f6 AS base
 WORKDIR /app
 
 FROM base AS deps
@@ -18,7 +18,7 @@ FROM build AS test
 ENV NODE_ENV=test
 COPY tests ./tests
 
-FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
