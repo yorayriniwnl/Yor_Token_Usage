@@ -86,14 +86,8 @@ jobs:
         run: npm run design:check
       - name: Run accuracy calibration regression
         run: npm run accuracy:benchmark
-      - name: Verify quota evidence parsing
-        run: npm run quota:check
-      - name: Verify overlay window calculations
-        run: npm run overlay:check
-      - name: Verify reset predictor logic
-        run: npm run reset:check
-      - name: Run adversarial stress suite
-        run: npm run stress:check
+      - name: Run extension regression suite
+        run: npm run regression:check
       - name: Install Chromium for extension regressions
         run: npx playwright install --with-deps chromium
       - name: Verify unpacked extension in Chromium (controlled provider fixture)

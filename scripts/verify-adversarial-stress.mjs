@@ -2,9 +2,12 @@ import { readFile } from "node:fs/promises";
 import { webcrypto } from "node:crypto";
 import vm from "node:vm";
 
-console.log("================================================================================");
-console.log("      YOR TOKEN USAGE: ADVERSARIAL STRESS & SECURITY VERIFICATION SUITE");
-console.log("================================================================================");
+const verbose = process.env.YOR_STRESS_VERBOSE === "1";
+if (verbose) {
+  console.log("================================================================================");
+  console.log("      YOR TOKEN USAGE: ADVERSARIAL STRESS & SECURITY VERIFICATION SUITE");
+  console.log("================================================================================");
+}
 
 const source = await readFile(new URL("../background/service-worker.js", import.meta.url), "utf8");
 
@@ -137,7 +140,12 @@ const chrome = {
   action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
   notifications: { create: async () => "stress-notification" },
   permissions: { contains: async () => true, request: async () => true },
-  tabs: { query: async () => [], sendMessage: async () => ({ ok: false }), create: async () => {} }
+  tabs: {
+    onRemoved: { addListener: () => {} },
+    query: async () => [],
+    sendMessage: async () => ({ ok: false }),
+    create: async () => {}
+  }
 };
 
 const sandbox = {
@@ -178,6 +186,7 @@ function dispatch(message, sender = { url: `${extensionRoot}popup/popup.html` })
 
 let testsPassed = 0;
 let testsFailed = 0;
+let testCasesRun = 0;
 
 function assert(condition, message) {
   if (!condition) {
@@ -186,11 +195,12 @@ function assert(condition, message) {
     throw new Error(message);
   }
   testsPassed++;
-  console.log(`  PASS: ${message}`);
+  if (verbose) console.log(`  PASS: ${message}`);
 }
 
 async function runTest(name, fn) {
-  console.log(`\n[TEST] ${name}`);
+  testCasesRun++;
+  if (verbose) console.log(`\n[TEST] ${name}`);
   try {
     await fn();
   } catch (err) {
@@ -491,9 +501,13 @@ await runTest("Concurrency: 50 Mixed Concurrent Operations Complete Without Corr
   assert(finalSnapshot?.state?.usageEvents !== undefined, "Final state is valid and accessible");
 });
 
-console.log("\n================================================================================");
-console.log(`STRESS & SECURITY VERIFICATION COMPLETE: ${testsPassed} passed, ${testsFailed} failed`);
-console.log("================================================================================");
+if (verbose) {
+  console.log("\n================================================================================");
+  console.log(`STRESS & SECURITY VERIFICATION COMPLETE: ${testsPassed} assertions passed, ${testsFailed} failed across ${testCasesRun} scenarios`);
+  console.log("================================================================================");
+} else {
+  console.log(`stress-check=${testsFailed === 0 ? "pass" : "fail"}; scenarios=${testCasesRun}; assertions_passed=${testsPassed}; assertion_failures=${testsFailed}`);
+}
 
 if (testsFailed > 0) {
   process.exit(1);

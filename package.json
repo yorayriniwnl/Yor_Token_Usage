@@ -11,7 +11,8 @@
     "quota:check": "node scripts/verify-quota-evidence.mjs",
     "browser:check": "node scripts/verify-overlay-browser.cjs",
     "capture:check": "node scripts/verify-capture-browser.cjs",
-    "stress:check": "node scripts/verify-adversarial-stress.mjs"
+    "stress:check": "node scripts/verify-adversarial-stress.mjs",
+    "regression:check": "node scripts/verify-extension-regressions.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.9",

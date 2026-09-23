@@ -322,4 +322,30 @@ Replaced the persona-based blanket certification with a current-tree snapshot de
 
 ## Cycle 10
 
-Pending execution. This final cycle will integrate and run the current verification set, request an independent review, fix any Critical/Important findings, and then commit and push the branch.
+### Finding
+
+The regression checks added during cycles 6–9 were not part of a shared CI or release gate. The package preflight invoked `powershell.exe` directly even though GitHub Actions runs this job on Ubuntu. The adversarial stress suite printed every passing assertion, and its runtime mock omitted `chrome.tabs.onRemoved`, so the suite crashed before reaching its scenarios. The cycle-8 report had claimed that the runtime mock supplied this event, but that fix was only present in a different harness; the stress harness itself had not been executed by the then-current gates.
+
+### Red checks
+
+`node scripts/verify-regression-integration.mjs` failed because `package.json` had no `regression:check` command. After adding the common gate, `node scripts/verify-adversarial-stress.mjs` failed at `chrome.tabs.onRemoved.addListener` with a `TypeError`. `node scripts/verify-package-preflight.mjs` passed on Windows.
+
+### Initial implementation
+
+Added `verify-extension-regressions.mjs` to run the regression scripts through the current Node executable, registered it as `npm run regression:check`, and wired both GitHub Actions and the PowerShell release verifier to it. The gate gathers tokenizer/context, capture/state, privacy/submission, copy-shorter, package, audit consistency, runtime, preferences, quota, overlay, reset, and stress checks. Updated package preflight to choose `powershell.exe` on Windows and `pwsh` elsewhere. The stress suite now supports opt-in verbose logs and a concise assertion/scenario summary by default.
+
+### Strict audit
+
+The new integration contract passed and confirmed the CI/release wiring, cross-platform PowerShell selection, and concise stress output. Running the wired checks individually then exposed the missing `tabs.onRemoved` event in the stress fixture; consequently, wiring alone would have made CI fail immediately rather than validate the suite. The package preflight passes on this Windows host; the Ubuntu PowerShell path must be exercised by CI. The overlay browser fixture passed on installed Edge, but the capture fixture failed before launch because it hardcoded Playwright Chromium and that executable is not installed. The parallel overlay fixture already supports an explicit browser executable, so capture cannot presently reuse the available browser for diagnosis.
+
+### Fix prompt
+
+See cycle 10 in `docs/audit/ten-cycle-remediation-fix-prompt.md`. Make the stress fixture model the event listener actually registered by the service worker, keep detailed assertion output behind `YOR_STRESS_VERBOSE=1`, let the capture fixture select an installed browser through `YOR_CHROME_PATH` and `YOR_TEST_HEADLESS`, verify the shared regression gate is in both CI and packaging, and run every check in the gate plus the browser fixtures and full release packager before calling the cycle complete.
+
+### Follow-up implementation
+
+Added `chrome.tabs.onRemoved.addListener` to the stress fixture and added opt-in verbosity so normal runs report one summary line. Updated the capture browser fixture to accept `YOR_CHROME_PATH` and `YOR_TEST_HEADLESS`; the integration contract now locks those options, stress mock event, platform-specific PowerShell, package command, and CI/release wiring. Expanded the current-tree snapshot with the new regression, browser, and package evidence and kept unverified live-provider/backend/Ubuntu scope explicit.
+
+### Strong audit
+
+`node scripts/verify-regression-integration.mjs` passes after first failing on the missing package command and later on the capture fixture's missing executable option. `node scripts/verify-extension-regressions.mjs` passes all 15 checks, including seven stress scenarios and 10,026 passing assertions. `node node_modules/typescript/bin/tsc --noEmit --pretty false`, `node scripts/build.mjs` (eight entry points), `node scripts/check-design.mjs`, `node scripts/benchmark-accuracy.mjs`, `node scripts/verify-overlay-browser.cjs` in installed Microsoft Edge, and `node scripts/verify-capture-browser.cjs` in installed Microsoft Edge pass. The browser pages were controlled Claude-shaped fixtures, not signed-in provider sessions. `scripts/verify-extension.ps1` passes typecheck, build, the integrated regressions, package creation, and byte-for-byte reproducibility; both runs produced SHA-256 `2A05AC57575F60A19B4C8CE88CF28F33AAAD4FEB8D3AFECE050330694EFD7D2B` for a 1,708,143-byte ZIP. This host has no npm executable, so the verifier was run with a temporary PowerShell function mapping its two npm commands to the same checked-in Node commands. The Ubuntu `pwsh`/Chromium CI path and backend PostgreSQL/Redis suite remain unobserved locally. `git diff --check` passed before the final snapshot wording update and is rerun after this review.

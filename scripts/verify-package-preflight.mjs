@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const tempRoot = await mkdtemp(path.join(tmpdir(), "yor-package-preflight-"));
 const outputPath = path.join(tempRoot, "incomplete.zip");
 const outsidePath = `${tempRoot}-outside.js`;
+const powershellExecutable = process.platform === "win32" ? "powershell.exe" : "pwsh";
 try {
   for (const directory of ["scripts", "assets/icons", "background", "content", "dashboard", "popup", "settings"]) {
     await mkdir(path.join(tempRoot, directory), { recursive: true });
@@ -28,7 +29,7 @@ try {
   await writeFile(path.join(tempRoot, "settings/settings.html"), "<html></html>");
   await writeFile(path.join(tempRoot, "assets/icons/icon.png"), "fixture icon");
 
-  const result = spawnSync("powershell.exe", [
+  const result = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", outputPath
   ], { encoding: "utf8" });
@@ -44,7 +45,7 @@ try {
   manifest.web_accessible_resources[0].resources.push("assets/fonts/*.woff2");
   await writeFile(path.join(tempRoot, "manifest.json"), JSON.stringify(manifest, null, 2));
   const wildcardOutput = path.join(tempRoot, "wildcard-incomplete.zip");
-  const wildcardResult = spawnSync("powershell.exe", [
+  const wildcardResult = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", wildcardOutput
   ], { encoding: "utf8" });
@@ -57,7 +58,7 @@ try {
   await mkdir(path.join(tempRoot, "assets/fonts"), { recursive: true });
   await writeFile(path.join(tempRoot, "assets/fonts/font.woff2"), "fixture font");
   const validOutput = path.join(tempRoot, "complete.zip");
-  const validResult = spawnSync("powershell.exe", [
+  const validResult = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", validOutput
   ], { encoding: "utf8" });
@@ -65,7 +66,7 @@ try {
   assert.equal(existsSync(validOutput), true, "a valid extension archive must be created");
 
   const listCommand = `Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [System.IO.Compression.ZipFile]::OpenRead('${validOutput}'); try { $zip.Entries | ForEach-Object { $_.FullName } } finally { $zip.Dispose() }`;
-  const archiveListing = spawnSync("powershell.exe", ["-NoProfile", "-Command", listCommand], { encoding: "utf8" });
+  const archiveListing = spawnSync(powershellExecutable, ["-NoProfile", "-Command", listCommand], { encoding: "utf8" });
   assert.equal(archiveListing.status, 0, `The archive must be readable. ${archiveListing.stderr}`);
   const entries = archiveListing.stdout.split(/\r?\n/).filter(Boolean);
   for (const requiredEntry of ["background/service-worker.js", "content/index.js", "content/index.css", "assets/fonts/font.woff2", "assets/icons/icon.png"]) {
@@ -73,7 +74,7 @@ try {
   }
 
   const originalArchive = await readFile(validOutput);
-  const reproducibleResult = spawnSync("powershell.exe", [
+  const reproducibleResult = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", validOutput
   ], { encoding: "utf8" });
@@ -83,7 +84,7 @@ try {
   const contentScriptPath = path.join(tempRoot, "content/index.js");
   const contentScript = await readFile(contentScriptPath);
   await writeFile(contentScriptPath, "//# sourceMappingURL=index.js.map\n");
-  const sourceMapResult = spawnSync("powershell.exe", [
+  const sourceMapResult = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", validOutput
   ], { encoding: "utf8" });
@@ -94,7 +95,7 @@ try {
 
   const workerPath = path.join(tempRoot, "background/service-worker.js");
   const originalWorker = await readFile(workerPath);
-  const collisionResult = spawnSync("powershell.exe", [
+  const collisionResult = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", workerPath
   ], { encoding: "utf8" });
@@ -102,7 +103,7 @@ try {
   assert.deepEqual(await readFile(workerPath), originalWorker, "a rejected output path must leave the worker unchanged");
 
   const nestedOutput = path.join(tempRoot, "content/nested.zip");
-  const nestedResult = spawnSync("powershell.exe", [
+  const nestedResult = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", nestedOutput
   ], { encoding: "utf8" });
@@ -112,7 +113,7 @@ try {
   manifest.background.service_worker = `../${path.basename(outsidePath)}`;
   await writeFile(path.join(tempRoot, "manifest.json"), JSON.stringify(manifest, null, 2));
   await writeFile(outsidePath, "outside the extension root");
-  const traversalResult = spawnSync("powershell.exe", [
+  const traversalResult = spawnSync(powershellExecutable, [
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     path.join(tempRoot, "scripts/package-extension.ps1"), "-Output", validOutput
   ], { encoding: "utf8" });

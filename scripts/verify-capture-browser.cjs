@@ -7,10 +7,15 @@ const { chromium } = require('playwright');
 (async () => {
   const root = path.resolve(__dirname, '..');
   const profile = await mkdtemp(path.join(tmpdir(), 'yor-capture-regression-'));
-  const context = await chromium.launchPersistentContext(profile, {
-    headless: true, channel: 'chromium', reducedMotion: 'reduce',
+  const browserOptions = {
+    headless: process.env.YOR_TEST_HEADLESS !== 'false', channel: 'chromium', reducedMotion: 'reduce',
     args: [`--disable-extensions-except=${root}`, `--load-extension=${root}`]
-  });
+  };
+  if (process.env.YOR_CHROME_PATH) {
+    delete browserOptions.channel;
+    browserOptions.executablePath = process.env.YOR_CHROME_PATH;
+  }
+  const context = await chromium.launchPersistentContext(profile, browserOptions);
   const failures = [];
   try {
     await context.route('https://claude.ai/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
