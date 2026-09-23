@@ -288,6 +288,38 @@ Expanded package validation to resolve literal files and wildcard resources unde
 
 ---
 
-## Cycles 9–10
+## Cycle 9 — audit-report evidence drift
 
-Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.
+### Finding
+
+`docs/audit/final-adversarial-audit.md` named extension version 1.1.2 while the manifest is 1.1.1; it claimed seven build outputs while the build has eight targets; and it presented a whole-product “10/10 production-ready” verdict with Chromium and 36-test backend passes that this checkout's current evidence does not support. It also described side-by-side shorter/balanced/max-detail previews that are absent from the product.
+
+### Red test
+
+`node scripts/verify-audit-report.mjs` failed because the report version did not match `manifest.json`.
+
+### Implementation
+
+Updated the evaluation date, version, and build count in the report header and table.
+
+### Strict audit
+
+The consistency regression advanced and failed on `10/10 PRODUCTION-READY - ZERO COMPROMISES REMAINING`. The file still declared all 14 baseline defects eradicated, claimed a whole-system independent audit, Chromium and backend test passes, zero public-boundary `any` leaks, and optimizer previews not present in the current extension. Updating metadata alone would leave materially misleading claims.
+
+### Fix prompt
+
+See the cycle-9 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. Replace the stale verdict with an evidence-scoped snapshot: derive the live version/build count, list only checks actually run with exact results, distinguish the real Edge/controlled-provider UI check from live provider or Chromium verification, describe the implemented optimizer accurately, and mark backend-wide or legacy F-01–F-14 claims unverified unless freshly evidenced. Keep a limitations section and make the consistency regression reject stale or unqualified claims.
+
+### Follow-up implementation
+
+Replaced the persona-based blanket certification with a current-tree snapshot derived from `manifest.json`, the eight build entry points, and verification commands actually run. The snapshot records the heuristic benchmark against OpenAI BPE, describes copy-shorter as formatting-only, separates the controlled Edge fixture from a live provider account, and explicitly lists the Chromium, browser-capture, backend, and historical F-01–F-14 scopes that remain unverified. Added `scripts/verify-audit-report.mjs` to tie version/build count to source and reject unqualified production claims or stale test-pass counts.
+
+### Strong audit
+
+`node scripts/verify-audit-report.mjs` passes. The check failed first on the stale version; after the metadata-only edit it failed on the blanket production-ready claim, which was removed along with unsupported all-system/14-defect, Chromium, backend-count, and optimizer-preview claims. `node node_modules/typescript/bin/tsc --noEmit --pretty false`, `node scripts/build.mjs` (eight entry points), `node scripts/verify-copy-shorter.mjs`, `node scripts/verify-package-preflight.mjs`, `node scripts/verify-live-capture.mjs`, `node scripts/verify-capture-state.mjs`, `node scripts/check-design.mjs`, `node scripts/benchmark-accuracy.mjs`, and `git diff --check` pass. The current 20-sample benchmark measured 17.97% mean APE and 37.61% maximum APE; browser/backend limitations are stated in the snapshot rather than presented as passes.
+
+---
+
+## Cycle 10
+
+Pending execution. This final cycle will integrate and run the current verification set, request an independent review, fix any Critical/Important findings, and then commit and push the branch.
