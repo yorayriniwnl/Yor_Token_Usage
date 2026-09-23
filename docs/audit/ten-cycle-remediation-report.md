@@ -192,6 +192,38 @@ Reviewed every service-worker message case: global read/write/export/history/clo
 
 ---
 
-## Cycles 6–10
+## Cycle 6 — model-aware tokenizer wiring
+
+### Finding
+
+The estimator could label a count `deterministic_local` even when no encoder was available. Its runtime encoder loading also crossed from the isolated content-script world into the page world, active draft/capture calls omitted model tokenizer options, and the single default encoder was incorrectly used for both `o200k_base` and `cl100k_base`.
+
+### Red test
+
+`node scripts/verify-tokenizer-wiring.mjs` initially failed because a GPT-4o estimate without an encoder reported `deterministic_local` instead of `approximation`.
+
+### Implementation
+
+Added an encoder-availability check so the fallback path no longer claims deterministic measurement when no encoder function is present.
+
+### Strict audit
+
+After the availability guard, the focused check advanced to `cl100k_base` and failed with `22 !== 24`: the local `gpt-tokenizer` root export is `o200k_base`, while the count path reused that function for cl100k requests. Source review found the content script only injects `content/gpt-tokenizer.js` through a page `<script>` (main-world code), while the estimator runs in the isolated extension world; the manifest lists the tokenizer as a web-accessible resource but not as a content script. Further, `getDraftTokenBreakdown` and the capture state machine call the estimator without provider/model/tokenizer options, so recognized GPT models never request their known tokenizer. Unknown OpenAI models and non-OpenAI providers need to remain approximate. Bundle inspection measured the two-encoding output at 5.3 MB, so loading it on Claude, Gemini, Perplexity, or Grok pages would impose needless parsing cost. A state-machine regression then failed with `deterministic_local` after a mocked encoder threw: the numeric path fell back to a heuristic, but the event rebuilt its metadata from encoder presence rather than the result. The live context-accounting path had the same issue. A wording assertion failed because metadata called the third-party package an “official BPE encoder” and did not say hidden provider context was excluded. Attachment audit found unknown binary token contribution was converted from `null` to zero; the new regression failed with `22 !== null`. A page-count attachment estimate likewise cannot make the overall total deterministic. Tracing that `null` to content also showed JavaScript addition silently drops the unknown state (`visibleTokens + null`), and the overlay hardcodes context pressure to `low` even when the total is incomplete or the real provider context is hidden.
+
+### Fix prompt
+
+See the cycle-6 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. It requires separate o200k/cl100k encoders in the isolated content-script world, explicit model-profile resolution on draft and committed prompt/response paths, truthful approximation fallback when an encoder is absent or throws, and regressions for supported, missing, unknown, and non-OpenAI tokenizer cases.
+
+### Follow-up implementation
+
+Moved the two OpenAI encoders into a `document_start` isolated content script scoped to ChatGPT hosts, then resolve model profiles on both draft and committed exchange paths. Fallback metadata now reflects the actual result, including encoder exceptions; unknown attachment totals remain `null`, and estimated attachments downgrade the combined total to approximation. Context accounting reuses the draft measurement, displays “Unknown” for incomplete totals, and keeps pressure unknown because provider-owned context is hidden. Added a focused context helper and regression; widened the context total type to `number | null`. The full typecheck also exposed and fixed pre-existing inferred-type failures in the storage helpers. Cleaned up indentation found during source review.
+
+### Strong audit
+
+The strict follow-up regressions now pass for both installed encodings against the package's actual `o200k_base` and `cl100k_base` output; supported GPT-4o draft/prompt/response paths; unknown models and non-OpenAI providers; absent or throwing encoders; unknown and rough attachment contributions; manifest world, load order, and host scope; and incomplete context totals. `node scripts/verify-context-unknown.mjs`, `node scripts/verify-tokenizer-wiring.mjs`, `node scripts/verify-capture-state.mjs`, `node scripts/verify-live-capture.mjs`, `node scripts/verify-submission-flow.mjs`, `node node_modules/typescript/bin/tsc --noEmit --pretty false`, `node scripts/build.mjs`, and `git diff --check` pass. The 20-sample OpenAI BPE benchmark reports mean absolute percentage error 17.97% and maximum 37.61%; this measures the heuristic benchmark corpus, not provider billing truth. Browser execution is still unverified because the prior Chromium runner failed with Windows `spawn UNKNOWN`.
+
+---
+
+## Cycles 7–10
 
 Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.

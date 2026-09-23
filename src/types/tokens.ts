@@ -50,7 +50,7 @@ export interface ThreadContextAccounting {
   /** Number of visible messages captured */
   visibleMessageCount: number;
   /** Best estimate of active model context window occupancy */
-  estimatedCurrentContextTokens: number;
+  estimatedCurrentContextTokens: number | null;
   /** Context window capacity of model if known, or undefined */
   contextWindowCapacity?: number;
   /** Context window occupancy percentage if capacity is known */

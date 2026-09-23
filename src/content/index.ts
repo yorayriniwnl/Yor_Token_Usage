@@ -3,14 +3,15 @@ import { CaptureStateMachine, type CommittedExchange } from "../capture/stateMac
 import { observeUserSubmissions } from "../capture/submissionListeners.js";
 import { applyOverlayPosition } from "../overlay/overlay-position.js";
 import { isOverlayInitiallyVisible } from "./overlayVisibility.js";
+import { estimateVisibleContext } from "./contextEstimate.js";
 import { parseQuotaHintsFromText } from "../adapters/base.js";
 import { debounce } from "../shared/utils.js";
 import type { TabViewStateResponse, UsageEventCommitResponse } from "../types/messages.js";
 
-function getDraftTokenBreakdown(text: string, attachments: any[] = []) {
+function getDraftTokenBreakdown(text: string, attachments: any[] = [], provider: string, model: string) {
   const engine = (globalThis as any).YorTokenAccuracy;
-  if (engine?.estimateTokenBreakdown) {
-    return engine.estimateTokenBreakdown(text, attachments);
+  if (engine?.estimateTokenBreakdownForModel) {
+    return engine.estimateTokenBreakdownForModel(text, attachments, provider, model);
   }
   const total = Math.ceil((text?.length || 0) / 4);
   return {
@@ -25,10 +26,14 @@ function getDraftTokenBreakdown(text: string, attachments: any[] = []) {
   };
 }
 
-function getMeasurement(provider: string, model: string) {
+function getContextMeasurement(provider: string, model: string) {
   const engine = (globalThis as any).YorTokenAccuracy;
   if (engine?.createMeasurement) {
-    return engine.createMeasurement({ provider, model });
+    return engine.createMeasurement({
+      provider,
+      model,
+      source: "visible conversation text plus character-based context estimate"
+    });
   }
   return {
     measurementLevel: "approximation" as const,
@@ -154,7 +159,7 @@ async function init() {
   let overlayVisible = true;
   try {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      const tabView = await chrome.runtime.sendMessage<TabViewStateResponse>({
+      const tabView = await chrome.runtime.sendMessage<any, TabViewStateResponse>({
         type: "get-tab-view-state",
         site: activeAdapter.site,
         threadId: activeAdapter.getConversationId(url)
@@ -173,7 +178,7 @@ async function init() {
   const onCommitExchange = (event: CommittedExchange) => {
     try {
       if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-        chrome.runtime.sendMessage<UsageEventCommitResponse>({
+        chrome.runtime.sendMessage<any, UsageEventCommitResponse>({
           type: "commit-usage-event",
           event
         }).catch(() => void 0);
@@ -395,18 +400,19 @@ async function init() {
       }
     }
 
-    const hasContent = draftText.trim().length > 0 || visibleMessages.length > 0;
+    const hasContent = draftText.trim().length > 0 || visibleMessages.length > 0 || attachments.length > 0;
+    const draftBreakdown = getDraftTokenBreakdown(draftText, attachments, activeAdapter.site, modelInfo.label || "unknown");
+    const visibleTokens = visibleMessages.reduce((sum, m) => sum + Math.ceil(m.text.length / 4), 0);
+    const visibleEstimate = estimateVisibleContext(visibleTokens, draftBreakdown.total);
 
     if (!hasContent) {
       meterTokens.textContent = "Not detected";
       meterReset.textContent = "Unknown";
       meterPercent.textContent = "Unknown";
     } else {
-      const draftBreakdown = getDraftTokenBreakdown(draftText, attachments);
-      const visibleTokens = visibleMessages.reduce((sum, m) => sum + Math.ceil(m.text.length / 4), 0);
-      const totalTokens = visibleTokens + draftBreakdown.total;
-
-      meterTokens.textContent = `${totalTokens > 0 ? totalTokens : draftBreakdown.total}`;
+      meterTokens.textContent = visibleEstimate.estimatedCurrentContextTokens === null
+        ? "Unknown"
+        : `${visibleEstimate.estimatedCurrentContextTokens}`;
       meterPercent.textContent = quota?.percentUsed !== undefined ? `${quota.percentUsed}%` : "Unknown";
 
       // Reset estimate logic
@@ -427,8 +433,6 @@ async function init() {
     positionOverlay();
 
     // Context accounting
-    const draftBreakdown = getDraftTokenBreakdown(draftText, attachments);
-    const visibleTokens = visibleMessages.reduce((sum, m) => sum + Math.ceil(m.text.length / 4), 0);
     const draftAnalysis = {
       inputTokens: draftBreakdown.total,
       sections: draftBreakdown.sections,
@@ -438,9 +442,9 @@ async function init() {
     const contextAccounting = {
       visibleThreadTokens: visibleTokens,
       visibleMessageCount: visibleMessages.length,
-      estimatedCurrentContextTokens: visibleTokens + draftBreakdown.total,
-      contextPressureTier: "low" as const,
-      measurement: getMeasurement(activeAdapter.site, modelInfo.label || "unknown")
+      estimatedCurrentContextTokens: visibleEstimate.estimatedCurrentContextTokens,
+      contextPressureTier: visibleEstimate.contextPressureTier,
+      measurement: getContextMeasurement(activeAdapter.site, modelInfo.label || "unknown")
     };
 
     try {

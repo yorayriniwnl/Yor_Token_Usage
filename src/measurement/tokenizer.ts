@@ -1,22 +1,21 @@
-let encodeFn: ((text: string) => number[]) | null = null;
+type Encoder = (text: string) => number[];
+type SupportedTokenizer = "o200k_base" | "cl100k_base";
 
-if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
-  try {
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('content/gpt-tokenizer.js');
-    script.onload = () => {
-      encodeFn = (globalThis as any).GptTokenizer_encode || null;
-    };
-    (document.head || document.documentElement).appendChild(script);
-  } catch {}
-} else if (typeof globalThis !== 'undefined' && (globalThis as any).GptTokenizer_encode) {
-  encodeFn = (globalThis as any).GptTokenizer_encode;
+function getEncoder(modelTokenizer?: string): Encoder | null {
+  if (modelTokenizer !== "o200k_base" && modelTokenizer !== "cl100k_base") return null;
+  const encoders = (globalThis as any).YorTokenizers;
+  const encoder = encoders?.[modelTokenizer];
+  return typeof encoder === "function" ? encoder as Encoder : null;
 }
 
 export interface DeterministicTokenizerResult {
   tokens: number;
   tokenizer: string;
   isDeterministic: boolean;
+}
+
+export function isDeterministicTokenizerAvailable(modelTokenizer?: string): boolean {
+  return getEncoder(modelTokenizer) !== null;
 }
 
 /**
@@ -27,14 +26,11 @@ export function countTokensDeterministic(
   text: string,
   modelTokenizer?: string
 ): DeterministicTokenizerResult | null {
-  if (!text) {
-    return { tokens: 0, tokenizer: modelTokenizer || "o200k_base", isDeterministic: true };
-  }
-
   // Only apply OpenAI BPE tokenizer to OpenAI / o200k_base models.
   // Never pretend OpenAI tokenizer applies to Claude or Gemini!
   if (modelTokenizer === "o200k_base" || modelTokenizer === "cl100k_base") {
     try {
+      const encodeFn = getEncoder(modelTokenizer as SupportedTokenizer);
       if (!encodeFn) return null;
       const tokens = encodeFn(text).length;
       return {

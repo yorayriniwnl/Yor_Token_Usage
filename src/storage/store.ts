@@ -1,6 +1,8 @@
 import { STATE_KEY, PREFERENCES_SYNC_KEY, APP_VERSION, HISTORY_LIMIT, DEFAULT_PREFERENCES } from '../lib/constants.js';
 import { clamp, round } from '../lib/utils.js';
 import { getSnapshotAnalytics, invalidateSnapshotAnalytics } from '../analytics/usageAnalytics.js';
+import type { ProviderId } from '../types/models.js';
+import type { UserPreferences } from '../types/state.js';
 
 export var memoryStorage = /* @__PURE__ */ new Map();
 export var memorySessionStorage = /* @__PURE__ */ new Map();
@@ -10,12 +12,12 @@ export function logStateOperationError(error: any) {
   console.error("Yor Token Usage state operation failed", error);
 }
     // @ts-ignore
-export function enqueueStateOperation(operation: any) {
+export function enqueueStateOperation<T>(operation: () => T | Promise<T>): Promise<Awaited<T>> {
   const queuedOperation = stateQueue.then(operation);
   stateQueue = queuedOperation.then(() => void 0, (error) => {
     logStateOperationError(error);
   });
-  return queuedOperation;
+  return queuedOperation as Promise<Awaited<T>>;
 }
 export function localArea() {
   return typeof chrome !== "undefined" ? chrome.storage?.local : void 0;
@@ -282,7 +284,7 @@ export function timestampOr(value: any, fallback = Date.now()) {
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.min(value, Date.now() + 5 * 60_000);
 }
-export function createEmptySessions() {
+export function createEmptySessions(): Record<ProviderId, ReturnType<typeof normalizeSession> | undefined> {
   return {
     chatgpt: void 0,
     claude: void 0,
@@ -330,14 +332,13 @@ export function optionalNumberInRange(value: any, min: any, max: any) {
   return Number.isFinite(value) ? clamp(value, min, max) : void 0;
 }
     // @ts-ignore
-export function mergePreferences(partial: any) {
+export function mergePreferences(partial: any): UserPreferences {
   const partialPreferences = isPlainObject(partial) ? partial : {};
   const partialAlerts = isPlainObject(partialPreferences.alerts) ? partialPreferences.alerts : {};
-  const sites = Object.keys(DEFAULT_PREFERENCES.sites).reduce((acc, site) => {
-    // @ts-ignore
-    acc[site] = mergeSiteSettings(site, partialPreferences.sites?.[site]);
-    return acc;
-  }, {});
+  const sites = Object.fromEntries(Object.keys(DEFAULT_PREFERENCES.sites).map((site) => [
+    site,
+    mergeSiteSettings(site, partialPreferences.sites?.[site])
+  ])) as UserPreferences["sites"];
   return {
     theme: ["system", "dark", "light"].includes(partialPreferences.theme) ? partialPreferences.theme : DEFAULT_PREFERENCES.theme,
     compactMode: partialPreferences.compactMode === true,
@@ -424,7 +425,7 @@ export function normalizeSession(session: any) {
   };
 }
     // @ts-ignore
-export function normalizeSessions(rawSessions: any) {
+export function normalizeSessions(rawSessions: any): ReturnType<typeof createEmptySessions> {
   const sessions = createEmptySessions();
   for (const site of Object.keys(sessions)) {
     // @ts-ignore
@@ -464,9 +465,9 @@ export function normalizeUsageEvent(event: any) {
   };
 }
     // @ts-ignore
-export function normalizeUsageEvents(rawEvents: any) {
+export function normalizeUsageEvents(rawEvents: any): Array<NonNullable<ReturnType<typeof normalizeUsageEvent>>> {
   const seen = /* @__PURE__ */ new Set();
-  return (Array.isArray(rawEvents) ? rawEvents : []).map(normalizeUsageEvent).filter(Boolean).filter((event) => {
+  return (Array.isArray(rawEvents) ? rawEvents : []).map(normalizeUsageEvent).filter((event): event is NonNullable<ReturnType<typeof normalizeUsageEvent>> => event !== undefined).filter((event) => {
     const key = usageEventIdentity(event);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -589,7 +590,7 @@ export async function readStateFromStorage() {
   }
   return state;
 }
-export async function getState() {
+export async function getState(): Promise<ReturnType<typeof hydrateState>> {
   return enqueueStateOperation(() => readStateFromStorage());
 }
 export var _lastSyncedPreferencesJson = "";

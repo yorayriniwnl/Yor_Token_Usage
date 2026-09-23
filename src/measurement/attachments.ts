@@ -66,7 +66,7 @@ export function describeAttachmentsToSections(attachments: AttachmentDescriptor[
     return {
       label: processed.label,
       type: "attachment",
-      tokens: processed.tokens ?? 0,
+      tokens: processed.tokens,
       start: 0,
       end: processed.label.length,
       confidenceTier: processed.tokens === null ? "Unknown" : processed.provenance === "calibrated_estimate" ? "Moderate confidence" : "Rough estimate"

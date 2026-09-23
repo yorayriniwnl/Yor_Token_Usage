@@ -47,6 +47,17 @@
     {
       "matches": [
         "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content/gpt-tokenizer.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
         "https://chat.openai.com/*",
         "https://claude.ai/*",
         "https://gemini.google.com/*",
@@ -60,7 +71,8 @@
         "content/overlay-position.js",
         "content/index.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "world": "ISOLATED"
     }
   ],
   "commands": {
@@ -81,14 +93,6 @@
     {
       "resources": [
         "assets/icons/*"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    },
-    {
-      "resources": [
-        "content/gpt-tokenizer.js"
       ],
       "matches": [
         "<all_urls>"

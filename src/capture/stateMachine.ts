@@ -1,29 +1,55 @@
 import type { CapturedMessage, ObservedQuotaSignal, ProviderSiteAdapter } from "../types/adapters.js";
+import type { TokenMeasurementMetadata } from "../types/tokens.js";
 import { compactWhitespace, uid } from "../shared/utils.js";
 
 const RESPONSE_QUIET_PERIOD_MS = 1_000;
 const COMPLETION_RECHECK_INTERVAL_MS = 250;
 const PENDING_TIMEOUT_MS = 10 * 60_000;
 
-function estimateTokens(text: string): number {
-  const engine = (globalThis as any).YorTokenAccuracy;
-  if (engine?.estimateTokenBreakdown) {
-    return engine.estimateTokenBreakdown(text).total;
-  }
-  return Math.ceil((text?.length || 0) / 4);
+function approximateMeasurement(provider: string, model: string, source: string): TokenMeasurementMetadata {
+  return {
+    schemaVersion: 1,
+    measurementMethod: "dom-text-heuristic",
+    measurementLevel: "approximation",
+    confidenceTier: "Rough estimate",
+    confidence: 0.51,
+    errorMarginPercent: 40,
+    provider,
+    model,
+    tokenizer: "none",
+    source,
+    notes: "Visible text only; heuristic count used because deterministic tokenization was unavailable or failed."
+  };
 }
 
-function makeMeasurement(provider: string, model: string, source: string) {
+function estimateTokens(text: string, provider: string, model: string, source: string): { tokens: number; measurement: TokenMeasurementMetadata } {
   const engine = (globalThis as any).YorTokenAccuracy;
-  if (engine?.createMeasurement) {
-    return engine.createMeasurement({ provider, model, source });
+  if (engine?.estimateTokenBreakdownForModel) {
+    const breakdown = engine.estimateTokenBreakdownForModel(text, [], provider, model);
+    if (typeof breakdown?.total === "number" && breakdown.measurement) {
+      return { tokens: breakdown.total, measurement: breakdown.measurement };
+    }
   }
   return {
-    measurementLevel: "approximation" as const,
-    tokenizer: "none" as const,
-    confidence: "estimated" as const,
-    errorMarginPercent: 40
+    tokens: Math.ceil((text?.length || 0) / 4),
+    measurement: approximateMeasurement(provider, model, source)
   };
+}
+
+function combineTextMeasurements(
+  prompt: TokenMeasurementMetadata,
+  response: TokenMeasurementMetadata,
+  provider: string,
+  model: string
+): TokenMeasurementMetadata {
+  if (
+    prompt.measurementLevel === "deterministic_local" &&
+    response.measurementLevel === "deterministic_local" &&
+    prompt.tokenizer === response.tokenizer
+  ) {
+    return { ...response, source: "visible provider prompt and response text" };
+  }
+  return approximateMeasurement(provider, model, "visible provider prompt and response text");
 }
 
 export type CaptureState =
@@ -44,6 +70,7 @@ export interface PendingExchange {
   model: string;
   promptText: string;
   promptTokens: number;
+  promptMeasurement: TokenMeasurementMetadata;
   promptChars: number;
   startedAt: number;
   lastStreamingAt?: number;
@@ -110,7 +137,7 @@ export class CaptureStateMachine {
     this.clearCompletionTimer();
     this.clearPendingTimeoutTimer();
 
-    const promptTokens = estimateTokens(trimmed);
+    const promptEstimate = estimateTokens(trimmed, this.adapter.site, model, "visible provider prompt text");
     const knownAssistantIds = new Set<string>();
     visibleMessages
       .filter((m) => m.role === "assistant")
@@ -122,7 +149,8 @@ export class CaptureStateMachine {
       threadId,
       model,
       promptText: trimmed,
-      promptTokens,
+      promptTokens: promptEstimate.tokens,
+      promptMeasurement: promptEstimate.measurement,
       promptChars: trimmed.length,
       startedAt: Date.now(),
       awaitingThreadAssignment: threadId.endsWith(":new") || threadId.endsWith(":root"),
@@ -239,8 +267,14 @@ export class CaptureStateMachine {
     this.clearCompletionTimer();
     this.clearPendingTimeoutTimer();
 
-    const outputTokens = estimateTokens(assistantText);
-    const measurement = makeMeasurement(this.adapter.site, this.pending.model, "visible provider DOM response");
+    const responseEstimate = estimateTokens(assistantText, this.adapter.site, this.pending.model, "visible provider response text");
+    const outputTokens = responseEstimate.tokens;
+    const measurement = combineTextMeasurements(
+      this.pending.promptMeasurement,
+      responseEstimate.measurement,
+      this.adapter.site,
+      this.pending.model
+    );
 
     const committed: CommittedExchange = {
       id: this.pending.id,
@@ -271,7 +305,7 @@ export class CaptureStateMachine {
     this.clearCompletionTimer();
     this.clearPendingTimeoutTimer();
 
-    const measurement = makeMeasurement(this.adapter.site, this.pending.model, "provider rate limit signal");
+    const measurement = this.pending.promptMeasurement;
 
     const committed: CommittedExchange = {
       id: this.pending.id,
