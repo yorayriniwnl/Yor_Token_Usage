@@ -11,6 +11,8 @@ const listeners = new Map();
 const local = new Map();
 const sync = new Map();
 const session = new Map();
+const tabMessages = [];
+let notificationCalls = 0;
 
 function storageArea(target) {
   return {
@@ -38,12 +40,12 @@ const chrome = {
   commands: { onCommand: { addListener: (fn) => listeners.set("command", fn) } },
   tabs: {
     onRemoved: { addListener: (fn) => listeners.set("tab-removed", fn) },
-    query: async () => [],
-    sendMessage: async () => ({ ok: false }),
+    query: async () => [{ id: 99, url: "https://chatgpt.com/" }],
+    sendMessage: async (tabId, message) => { tabMessages.push({ tabId, message }); return { ok: false }; },
     create: async () => {}
   },
   action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
-  notifications: { create: async () => "test-notification" },
+  notifications: { create: async () => { notificationCalls += 1; return "test-notification"; } },
   permissions: { contains: async () => true }
 };
 
@@ -83,6 +85,90 @@ const view = await dispatch({ type: "get-tab-view-state", site: "chatgpt", threa
 assert.equal(view?.session?.tabId, 41, "the tab view must contain the sender tab's live session");
 assert.equal(view?.session?.currentDraft, "Keep this draft in the active tab", "the same tab must recover its draft");
 assert.equal("usageEvents" in view, false, "the tab view must not include global event history");
+for (const message of [{ type: "get-snapshot" }, { type: "get-state" }, { type: "export-data" }]) {
+  const result = await dispatch(message, sender);
+  assert.equal(result?.ok, false, `${message.type} must be denied to a provider-page sender`);
+  assert.equal("state" in result, false, `${message.type} must not return global state to a provider page`);
+}
+const extensionSnapshot = await dispatch({ type: "get-snapshot" }, { id: extensionId, url: `${extensionRoot}popup/popup.html` });
+assert.ok(extensionSnapshot?.state, "extension-owned UI must retain access to its own snapshot");
+
+const privacyEvent = {
+  clientEventId: "privacy-test-event",
+  site: "chatgpt",
+  model: "GPT-4o",
+  threadId: "thread-1",
+  timestamp: Date.now(),
+  promptTokens: 2,
+  outputTokens: 1,
+  totalTokens: 3,
+  promptChars: 8,
+  outputChars: 4,
+  status: "completed",
+  accuracy: "estimated",
+  measurement: {
+    schemaVersion: 1,
+    measurementMethod: "dom-text-heuristic",
+    measurementLevel: "approximation",
+    confidenceTier: "Rough estimate",
+    confidence: 0.5,
+    errorMarginPercent: 40,
+    provider: "chatgpt",
+    model: "GPT-4o",
+    tokenizer: "none",
+    source: "test fixture",
+    notes: "test fixture"
+  }
+};
+const extensionSender = { id: extensionId, url: `${extensionRoot}settings/settings.html` };
+const commitResponse = await dispatch({ type: "commit-usage-event", event: privacyEvent }, sender);
+assert.equal(commitResponse?.ok, true, "a page content script must still be able to commit token-only usage");
+assert.equal("snapshot" in commitResponse, false, "a usage commit must return only an acknowledgement, not global state");
+assert.equal("state" in commitResponse, false, "a usage commit must not return global state");
+
+const eventsBeforeRejectedCommits = (await dispatch({ type: "get-state" }, extensionSender)).usageEvents.length;
+const mismatchedCommit = await dispatch({
+  type: "commit-usage-event",
+  event: { ...privacyEvent, clientEventId: "mismatched-site-event", site: "claude" }
+}, sender);
+assert.equal(mismatchedCommit?.ok, false, "a provider tab must not commit an event labeled as another provider");
+const unsupportedCommit = await dispatch(
+  { type: "commit-usage-event", event: { ...privacyEvent, clientEventId: "unsupported-site-event" } },
+  { ...sender, tab: { id: 49, url: "https://example.invalid/" }, url: "https://example.invalid/" }
+);
+assert.equal(unsupportedCommit?.ok, false, "unsupported tabs must not commit usage events");
+const eventsAfterRejectedCommits = (await dispatch({ type: "get-state" }, extensionSender)).usageEvents.length;
+assert.equal(eventsAfterRejectedCommits, eventsBeforeRejectedCommits, "rejected usage events must not enter persistent history");
+
+const settingsBefore = await dispatch({ type: "get-state" }, extensionSender);
+const tabMessagesBeforeDeniedActions = tabMessages.length;
+const notificationCallsBeforeDeniedActions = notificationCalls;
+for (const message of [
+  { type: "save-preferences", payload: { showOverlay: false } },
+  { type: "import-data", payload: { usageEvents: [] } },
+  { type: "capture-session", session: { site: "chatgpt", model: "GPT-4o", threadId: "page-write", currentInput: "secret draft" } },
+  { type: "clear-local-history" },
+  { type: "cloud-status" },
+  { type: "cloud-connect", payload: {} },
+  { type: "cloud-sync" },
+  { type: "cloud-disconnect" },
+  { type: "toggle-overlay" },
+  { type: "notify", title: "page-triggered", message: "must not run" }
+]) {
+  const result = await dispatch(message, sender);
+  assert.equal(result?.ok, false, `${message.type} must be denied to a provider-page sender`);
+  assert.match(result?.error ?? "", /available only from Yor extension pages/, `${message.type} must explain that extension pages own this action`);
+}
+const settingsAfter = await dispatch({ type: "get-state" }, extensionSender);
+assert.equal(settingsAfter.preferences.showOverlay, settingsBefore.preferences.showOverlay, "denied page writes must not mutate global preferences");
+assert.equal(settingsAfter.usageEvents.length, settingsBefore.usageEvents.length, "denied page writes must not mutate usage history");
+assert.equal(tabMessages.length, tabMessagesBeforeDeniedActions, "page-origin overlay messages must not affect another tab");
+assert.equal(notificationCalls, notificationCallsBeforeDeniedActions, "page-origin messages must not create notifications");
+const extensionSavePreferences = await dispatch({
+  type: "save-preferences",
+  payload: { showOverlay: settingsAfter.preferences.showOverlay }
+}, extensionSender);
+assert.equal(extensionSavePreferences?.state?.preferences?.showOverlay, settingsAfter.preferences.showOverlay, "extension settings must retain permission to save preferences");
 
 const sender2 = {
   id: extensionId,

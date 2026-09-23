@@ -98,11 +98,11 @@
 
 **Interfaces:** Content initialization consumes `TabViewStateResponse`; content event commits receive only `{ ok, eventId? }`; extension UI retains its existing snapshot interface.
 
-- [ ] Assert provider-page requests receive only site preferences, a matching tab session, and minimal acknowledgements.
-- [ ] Run the regression; expected baseline: initialization/commit responses expose global state or cannot use the tab view.
-- [ ] Move content initialization to `get-tab-view-state` and stop returning `buildSnapshot` from content-originated actions.
-- [ ] Rebuild and rerun; expected: no cross-provider events, threads, or global settings are present in page-facing responses.
-- [ ] Strict-audit all worker message cases by sender type; record cycle 5.
+- [x] Assert provider-page requests receive only site preferences, a matching tab session, and minimal acknowledgements.
+- [x] Run the regression; expected baseline: initialization/commit responses expose global state or cannot use the tab view.
+- [x] Move content initialization to `get-tab-view-state` and stop returning `buildSnapshot` from content-originated actions.
+- [x] Rebuild and rerun; expected: no cross-provider events, threads, or global settings are present in page-facing responses.
+- [x] Strict-audit all worker message cases by sender type; record cycle 5.
 
 ### Task 6: Make tokenization match the selected model
 

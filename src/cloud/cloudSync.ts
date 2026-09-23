@@ -109,7 +109,7 @@ export function assertInternalExtensionSender(sender: any) {
   const senderUrl = sender?.url ?? sender?.tab?.url;
   const extensionRoot = chrome.runtime.getURL("");
   if (typeof senderUrl !== "string" || !senderUrl.startsWith(extensionRoot)) {
-    throw new Error("Cloud account controls are available only from Yor settings.");
+    throw new Error("This action is available only from Yor extension pages.");
   }
 }
     // @ts-ignore

@@ -2,8 +2,10 @@ import { getAdapterForUrl } from "../adapters/index.js";
 import { CaptureStateMachine, type CommittedExchange } from "../capture/stateMachine.js";
 import { observeUserSubmissions } from "../capture/submissionListeners.js";
 import { applyOverlayPosition } from "../overlay/overlay-position.js";
+import { isOverlayInitiallyVisible } from "./overlayVisibility.js";
 import { parseQuotaHintsFromText } from "../adapters/base.js";
 import { debounce } from "../shared/utils.js";
+import type { TabViewStateResponse, UsageEventCommitResponse } from "../types/messages.js";
 
 function getDraftTokenBreakdown(text: string, attachments: any[] = []) {
   const engine = (globalThis as any).YorTokenAccuracy;
@@ -149,22 +151,29 @@ async function init() {
   const activeAdapter: import("../types/adapters.js").ProviderSiteAdapter = siteAdapter;
 
   let sitePreferences: any = null;
+  let overlayVisible = true;
   try {
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      const snapshot = await chrome.runtime.sendMessage({ type: "get-snapshot" });
-      sitePreferences = snapshot?.state?.preferences?.sites?.[activeAdapter.site] ?? null;
+      const tabView = await chrome.runtime.sendMessage<TabViewStateResponse>({
+        type: "get-tab-view-state",
+        site: activeAdapter.site,
+        threadId: activeAdapter.getConversationId(url)
+      });
+      if (tabView?.ok) {
+        sitePreferences = tabView.sitePreference;
+        overlayVisible = isOverlayInitiallyVisible(tabView);
+      }
     }
   } catch {
     // ignore
   }
 
   let collapsed = true;
-  let overlayVisible = true;
 
   const onCommitExchange = (event: CommittedExchange) => {
     try {
       if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-        chrome.runtime.sendMessage({
+        chrome.runtime.sendMessage<UsageEventCommitResponse>({
           type: "commit-usage-event",
           event
         }).catch(() => void 0);
@@ -317,6 +326,7 @@ async function init() {
   `;
   shadow.append(wrapper);
   document.documentElement.appendChild(container);
+  container.style.display = overlayVisible ? "" : "none";
 
   const pageMeter = shadow.querySelector('[data-ref="pageMeter"]') as HTMLElement;
   const card = shadow.querySelector('[data-ref="card"]') as HTMLElement;

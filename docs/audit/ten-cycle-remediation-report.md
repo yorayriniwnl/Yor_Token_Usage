@@ -152,6 +152,46 @@ Added a per-exchange ten-minute timer scheduled at submit time and cleared on co
 
 ---
 
-## Cycles 5–10
+## Cycle 5 — content-script privacy boundary
+
+### Finding
+
+Provider-page content scripts requested `get-snapshot`, which returned the whole extension state. A `commit-usage-event` response also returned a snapshot even though the content caller ignored it.
+
+### Red test
+
+The updated worker regression failed with `get-snapshot must be denied to a provider-page sender`; the actual result contained the full state and had no denial acknowledgement.
+
+### Implementation
+
+Moved content initialization to `get-tab-view-state`, protected full snapshot/state/export reads with the internal-extension sender check, and changed event commits to return only `{ ok, eventId, recorded }`.
+
+### Strict audit
+
+The first live-capture harness passed the narrow tab view, denied page-origin `get-snapshot`, `get-state`, and `export-data`, kept extension-owned snapshots available, and confirmed event commits returned no state/snapshot. The strict follow-up harness then failed on a cross-provider commit (`true !== false`), and after that guard was added it failed on `save-preferences` (no denial acknowledgement). A sender-by-sender review also found that `import-data`, legacy `capture-session`, `clear-local-history`, cloud controls, `notify`, and `toggle-overlay` needed extension-page authorization. The content script ignored the returned site/global overlay settings. A further review found the denial helper's cloud-specific error was misleading for non-cloud endpoints; the new regression failed on that response text.
+
+### Fix prompt
+
+See the cycle-5 section in `docs/audit/ten-cycle-remediation-fix-prompt.md`. It exercises every privileged message path, verifies denied actions have no side effects, rejects provider/site mismatches and unsupported tabs, and checks overlay preference handling.
+
+### Follow-up implementation
+
+Added the content sender/site check before recording an event; non-tab event commits now require an extension-page sender. Added extension-page guards to preference/import/session/history/cloud/notification/overlay worker actions. The test proves denied calls do not alter preference/history state, message another tab, or create a notification; an extension-owned settings sender can still save preferences. Generalized the denial message to cover all extension-page-only actions. Added `isOverlayInitiallyVisible` and applied it to the mounted container using `siteEnabled` and global `showOverlay`; unavailable settings preserve the existing visible default. `TabViewStateResponse` now models success and failure separately, and content callers type both view and commit acknowledgements.
+
+The strict red cases were reproducible: the mismatched event was accepted before the sender/site check, `save-preferences` returned no denial acknowledgement before authorization, the overlay regression failed because the helper module did not exist, and the denied-action message falsely referred only to cloud settings. After the fixes, a fresh `node scripts/build.mjs` and these focused commands pass:
+
+- `node scripts/verify-live-capture.mjs` — `live-capture-regressions=pass`.
+- `node scripts/verify-tab-view-preferences.mjs` — `tab-view-preferences-check=pass`.
+- `node scripts/verify-submission-flow.mjs` — four intended submissions, duplicate signals deduplicated, native behavior preserved.
+- `node scripts/verify-capture-state.mjs` — quiet completion, stream reset, stop control, hard timeout, timer cleanup.
+- `git diff --check` — pass.
+
+### Strong audit
+
+Reviewed every service-worker message case: global read/write/export/history/cloud and notification/overlay actions require an extension URL; content observations and event commits derive the provider from the tab URL; a commit's event site must match that provider. Rejected events are proven absent from history, rejected writes leave preferences/history unchanged, and denied overlay/notification actions cause no tab message or notification. The narrow tab-view response exposes only the selected site's preference and matching live session; event acknowledgements contain no snapshot/state. Extension-owned `get-state`/`get-snapshot` and preference saving remain available in the harness. Denial responses identify the extension-page boundary. The overlay helper covers site-disabled, global-overlay-disabled, enabled, and unavailable-response cases, and source integration applies `display:none` before the browser paints. All focused regressions and build pass. Full browser execution remains unverified because the runner reports Windows `spawn UNKNOWN` when launching Chromium.
+
+---
+
+## Cycles 6–10
 
 Pending execution. Each entry will include the reproducible finding, red test or audit evidence, implementation, strict review, specific follow-up prompt, second-pass fix, and strong post-fix review.

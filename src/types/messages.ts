@@ -66,10 +66,26 @@ export type UItoBackgroundMessage =
 
 export type ExtensionMessage = ContentToBackgroundMessage | UItoBackgroundMessage;
 
-export interface TabViewStateResponse {
-  ok: boolean;
-  siteEnabled: boolean;
-  preferences: Pick<UserPreferences, "showOverlay" | "theme" | "anchorPosition">;
-  sitePreference: SitePreference;
-  session?: LiveTabSession;
-}
+export type TabViewStateResponse =
+  | {
+      ok: true;
+      siteEnabled: boolean;
+      preferences: Pick<UserPreferences, "showOverlay" | "theme" | "anchorPosition">;
+      sitePreference: SitePreference;
+      session?: LiveTabSession;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type UsageEventCommitResponse =
+  | {
+      ok: true;
+      eventId?: string;
+      recorded: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };

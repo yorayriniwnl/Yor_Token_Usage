@@ -229,6 +229,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "capture-session": {
+          assertInternalExtensionSender(sender);
           const { state, session } = await saveSession(message.payload ?? message.session);
           await updateBadge(session);
           if (session) {
@@ -239,7 +240,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "commit-usage-event": {
-          const { state, recorded, event } = await recordUsageEvent(message.payload ?? message.event);
+          const usageEvent = message.payload ?? message.event;
+          if (sender.tab) {
+            const context = getContentSenderContext(sender);
+            if (!context || context.site !== usageEvent?.site) {
+              sendResponse({ ok: false, error: "Usage event sender does not match a supported provider tab" });
+              break;
+            }
+          } else {
+            assertInternalExtensionSender(sender);
+          }
+          const { recorded, event } = await recordUsageEvent(usageEvent);
     // @ts-ignore
           await updateBadge();
           if (recorded && event) {
@@ -248,19 +259,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
     // @ts-ignore
     // @ts-ignore
-          sendResponse({ ok: true, eventId: event?.id, snapshot: buildSnapshot(state) });
+          sendResponse({ ok: true, eventId: event?.id, recorded });
           break;
         }
         case "get-snapshot": {
+          assertInternalExtensionSender(sender);
           const state = await getState();
           sendResponse(buildSnapshot(state, message.activeUrl));
           break;
         }
         case "get-state": {
+          assertInternalExtensionSender(sender);
           sendResponse(await getState());
           break;
         }
         case "save-preferences": {
+          assertInternalExtensionSender(sender);
           const state = await savePreferences(message.payload);
     // @ts-ignore
           await updateBadge();
@@ -269,10 +283,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "export-data": {
+          assertInternalExtensionSender(sender);
           sendResponse(await exportState());
           break;
         }
         case "import-data": {
+          assertInternalExtensionSender(sender);
           const state = await importState(message.payload);
     // @ts-ignore
           await updateBadge();
@@ -290,6 +306,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "toggle-overlay": {
+          assertInternalExtensionSender(sender);
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           if (tab?.id) {
             const result = await chrome.tabs.sendMessage(tab.id, { type: "toggle-overlay", value: message.value }).catch(() => void 0);
@@ -300,6 +317,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "notify": {
+          assertInternalExtensionSender(sender);
           sendResponse(await notify(message.title, message.message));
           break;
         }
