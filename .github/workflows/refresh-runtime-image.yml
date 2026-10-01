@@ -1,0 +1,53 @@
+name: Refresh pinned runtime image
+
+on:
+  push:
+    branches:
+      - fix/backend-audit-20261001
+    paths:
+      - ".github/workflows/refresh-runtime-image.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: fix/backend-audit-20261001
+      - name: Resolve current distroless nonroot digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="gcr.io/distroless/cc-debian13:nonroot"
+          docker pull "$image"
+          repo_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$image")"
+          digest="${repo_digest##*@}"
+          echo "Resolved $image -> $digest"
+          sed -i -E "s#^FROM gcr.io/distroless/cc-debian13:nonroot@sha256:[0-9a-f]+ AS runtime#FROM gcr.io/distroless/cc-debian13:nonroot@$digest AS runtime#" backend/Dockerfile
+          grep '^FROM gcr.io/distroless/cc-debian13' backend/Dockerfile
+      - name: Build candidate runtime image
+        run: docker build --tag yor-token-usage-runtime-refresh:ci backend
+      - name: Block fixable high and critical vulnerabilities
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
+        with:
+          image: yor-token-usage-runtime-refresh:ci
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+      - name: Commit validated runtime digest
+        shell: bash
+        run: |
+          if git diff --quiet -- backend/Dockerfile; then
+            echo "Runtime digest already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/Dockerfile
+          git commit -m "deps: refresh pinned distroless runtime image"
+          git push origin HEAD:fix/backend-audit-20261001
