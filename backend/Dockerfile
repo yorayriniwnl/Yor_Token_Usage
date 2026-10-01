@@ -18,15 +18,15 @@ FROM build AS test
 ENV NODE_ENV=test
 COPY tests ./tests
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97 AS runtime
-WORKDIR /app
+FROM base AS runtime
 ENV NODE_ENV=production
-COPY --from=base /usr/local/bin/node /usr/local/bin/node
-COPY --from=base /usr/local/LICENSE /licenses/node/LICENSE
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./
-USER 65532:65532
-CMD ["/usr/local/bin/node", "dist/server.js"]
+USER node
+CMD ["node", "dist/server.js"]
