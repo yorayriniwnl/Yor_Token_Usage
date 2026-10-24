@@ -12,6 +12,23 @@
 
 Yor is a Manifest V3 Chrome extension for estimating and reviewing AI token usage across ChatGPT, Claude, Gemini, Perplexity, and Grok.
 
+<!-- YOR REDLINE / EXPERIENCE V2 -->
+
+<a id="system-map"></a>
+## System map
+
+<div align="center"><picture><source media="(max-width: 600px)" srcset="docs/yor-redline-system-mobile.svg"/><img src="docs/yor-redline-system.svg" width="100%" alt="AI token usage cockpit: Capture UI signals to Store locally to Explore dashboard to Opt-in data sync"/></picture></div>
+
+| Project signal | Documented scope |
+| :--- | :--- |
+| **Current maturity** | EXPERIMENTAL / LOCAL-FIRST |
+| **Technical focus** | Manifest V3 extension tracking estimated usage across five AI interfaces, with opt-in sync. |
+| **Evidence boundary** | Token counts are estimates; usage remains local by default unless transport is enabled. |
+
+**Navigate:** [Product boundary](#product-boundary) · [Measurement contract](#measurement-contract) · [Verify the extension](#verify-the-extension) · [Verify the backend](#verify-the-backend)
+
+<!-- END YOR REDLINE / EXPERIENCE V2 -->
+
 ## Product boundary
 
 Yor is local-first by default. Usage history, sessions, and preferences are stored in Chrome storage; the popup, dashboard, settings page, exports, notifications, and overlay do not require an account or network service.
